@@ -5,6 +5,7 @@
 #include "filesys/raw_file_header.hh"
 
 #include <stdio.h>
+#include <mmu.hh>
 
 
 void SysInfo()
@@ -46,17 +47,20 @@ General:\n\
       PROGRAM, VERSION, OPTIONS);
     printf("\n\
 Memory:\n\
-  Page size: UNKNOWN bytes.\n\
-  Number of pages: UNKNOWN.\n\
-  Number of TLB entries: UNKNOWN.\n\
-  Memory size: UNKNOWN bytes.\n");
+  Page size: %u bytes.\n\
+  Number of pages: %u.\n\
+  Number of TLB entries: %u.\n\
+  Memory size: %u bytes.\n",
+      PAGE_SIZE, DEFAULT_NUM_PHYS_PAGES, TLB_SIZE, DEFAULT_NUM_PHYS_PAGES * PAGE_SIZE);
     printf("\n\
 Disk:\n\
-  Sector size: UNKNOWN bytes.\n\
-  Sectors per track: UNKNOWN.\n\
-  Number of tracks: UNKNOWN.\n\
-  Number of sectors: UNKNOWN.\n\
-  Disk size: UNKNOWN bytes.\n");
+  Sector size: %u bytes.\n\
+  Sectors per track: %u.\n\
+  Number of tracks: %u.\n\
+  Number of sectors: %u.\n\
+  Disk size: %lu bytes.\n",
+      SECTOR_SIZE, SECTORS_PER_TRACK, NUM_TRACKS, NUM_SECTORS,
+      sizeof(int) + NUM_SECTORS * SECTOR_SIZE);
     printf("\n\
 Filesystem:\n\
   Sectors per header: %u.\n\
