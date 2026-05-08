@@ -11,6 +11,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef SEMAPHORE_TEST
+#include "semaphore.hh"
+Semaphore* semaphore = new Semaphore("Ejercicio 15", 3);
+#endif
 
 /// Loop 10 times, yielding the CPU to another ready thread each iteration.
 ///
@@ -28,7 +32,17 @@ SimpleThread(void *name_)
     // behave incorrectly, because printf execution may cause race
     // conditions.
     for (unsigned num = 0; num < 10; num++) {
+        
+        #ifdef SEMAPHORE_TEST
+        semaphore->P();
+        #endif
+
         printf("*** Thread `%s` is running: iteration %u\n", currentThread->GetName(), num);
+
+        #ifdef SEMAPHORE_TEST
+        semaphore->V();
+        #endif
+
         currentThread->Yield();
     }
     
