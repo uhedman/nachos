@@ -23,9 +23,6 @@ Turnstile(void *n_)
 
     for (unsigned i = 0; i < ITERATIONS_PER_TURNSTILE; i++) {
         int temp = count;
-        printf("Turnstile %u yielding with temp=%u.\n", *n, temp);
-        currentThread->Yield();
-        printf("Turnstile %u back with temp=%u.\n", *n, temp);
         count = temp + 1;
         currentThread->Yield();
     }
