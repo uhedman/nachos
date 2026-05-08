@@ -35,12 +35,14 @@ SimpleThread(void *name_)
         
         #ifdef SEMAPHORE_TEST
         semaphore->P();
+        DEBUG('s', "*** Thread `%s` acquired the semaphore %s\n", currentThread->GetName(), semaphore->GetName());
         #endif
 
         printf("*** Thread `%s` is running: iteration %u\n", currentThread->GetName(), num);
 
         #ifdef SEMAPHORE_TEST
         semaphore->V();
+        DEBUG('s', "*** Thread `%s` released the semaphore %s\n", currentThread->GetName(), semaphore->GetName());
         #endif
 
         currentThread->Yield();
