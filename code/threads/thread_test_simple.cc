@@ -17,7 +17,9 @@
 /// * `name` points to a string with a thread name, just for debugging
 ///   purposes.
 
-bool thread2Done = false;
+const unsigned NUM_THREADS = 4;
+bool threadNDone[NUM_THREADS] = {false};
+
 void
 SimpleThread(void *name_)
 {
@@ -29,11 +31,23 @@ SimpleThread(void *name_)
         printf("*** Thread `%s` is running: iteration %u\n", currentThread->GetName(), num);
         currentThread->Yield();
     }
-    if (strcmp(currentThread->GetName(),"2nd")==0) {
-	thread2Done = true;
+    
+    // Get threadId from currentThread name
+    unsigned threadId;
+    if (sscanf(currentThread->GetName(), "Thread-%u", &threadId) == 1) {
+        threadNDone[threadId] = true;
     }
+
     printf("!!! Thread `%s` has finished SimpleThread\n", currentThread->GetName());
- 
+}
+
+/// Check all threads are done
+bool 
+AllThreadsDone() {
+    for (unsigned i = 0; i < NUM_THREADS; i++) {
+        if (!threadNDone[i]) return false;
+    }
+    return true;
 }
 
 /// Set up a ping-pong between several threads.
@@ -43,15 +57,31 @@ SimpleThread(void *name_)
 void
 ThreadTestSimple()
 {
-    Thread *newThread = new Thread("2nd");
-    newThread->Fork(SimpleThread, NULL);
+    Thread **newThreads = new Thread*[NUM_THREADS];
+    char **threadNames = new char*[32];
+
+    // Generate threads and their names
+    for (unsigned i = 0; i < NUM_THREADS; i++) {
+        threadNames[i] = new char[32];
+        snprintf(threadNames[i], 32, "Thread-%u", i);
+        newThreads[i] = new Thread(threadNames[i]);
+        newThreads[i]->Fork(SimpleThread, (void*)threadNames[i]);
+    }
 
     //the "main" thread also executes the same function
     SimpleThread(NULL);
 
-   //Wait for the 2nd thread to finish if needed
-    while (!thread2Done) {
+    //Wait for the threads to finish if needed
+    while (!AllThreadsDone()) {
         currentThread->Yield(); 
     }
+
     printf("Test finished\n");
+
+    // Free memory
+    delete [] newThreads;
+    for (unsigned i = 0; i < NUM_THREADS; i++) {
+        delete [] threadNames[i];
+    }
+    delete [] threadNames;
 }
