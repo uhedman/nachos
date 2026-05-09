@@ -22,7 +22,7 @@ Semaphore* semaphore = new Semaphore("Ejercicio 15", 3);
 ///   purposes.
 
 const unsigned NUM_THREADS = 4;
-bool threadNDone[NUM_THREADS] = {false};
+bool done[NUM_THREADS] = {false};
 
 void
 SimpleThread(void *name_)
@@ -48,22 +48,16 @@ SimpleThread(void *name_)
         currentThread->Yield();
     }
     
-    // Get threadId from currentThread name
-    unsigned threadId;
-    if (sscanf(currentThread->GetName(), "Thread-%u", &threadId) == 1) {
-        threadNDone[threadId] = true;
+    // main thread is NULL
+    if (name_ != NULL) {
+        // Get threadId from currentThread name
+        unsigned threadId;
+        if (sscanf(currentThread->GetName(), "Thread-%u", &threadId) == 1) {
+            done[threadId] = true;
+        }
     }
 
     printf("!!! Thread `%s` has finished SimpleThread\n", currentThread->GetName());
-}
-
-/// Check all threads are done
-bool 
-AllThreadsDone() {
-    for (unsigned i = 0; i < NUM_THREADS; i++) {
-        if (!threadNDone[i]) return false;
-    }
-    return true;
 }
 
 /// Set up a ping-pong between several threads.
@@ -73,31 +67,31 @@ AllThreadsDone() {
 void
 ThreadTestSimple()
 {
-    Thread **newThreads = new Thread*[NUM_THREADS];
-    char **threadNames = new char*[32];
+    char **names = new char*[16];
 
     // Generate threads and their names
     for (unsigned i = 0; i < NUM_THREADS; i++) {
-        threadNames[i] = new char[32];
-        snprintf(threadNames[i], 32, "Thread-%u", i);
-        newThreads[i] = new Thread(threadNames[i]);
-        newThreads[i]->Fork(SimpleThread, (void*)threadNames[i]);
+        names[i] = new char[16];
+        sprintf(names[i], "Thread-%u", i);
+        Thread *t = new Thread(names[i]);
+        t->Fork(SimpleThread, (void*)names[i]);
     }
 
     //the "main" thread also executes the same function
     SimpleThread(NULL);
 
     //Wait for the threads to finish if needed
-    while (!AllThreadsDone()) {
-        currentThread->Yield(); 
+    for (unsigned i = 0; i < NUM_THREADS; i++) {
+        while (!done[i]) {
+            currentThread->Yield();
+        }
     }
 
     printf("Test finished\n");
 
     // Free memory
-    delete [] newThreads;
     for (unsigned i = 0; i < NUM_THREADS; i++) {
-        delete [] threadNames[i];
+        delete [] names[i];
     }
-    delete [] threadNames;
+    delete [] names;
 }
