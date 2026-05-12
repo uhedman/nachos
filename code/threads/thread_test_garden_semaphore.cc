@@ -69,7 +69,7 @@ ThreadTestGardenSemaphore()
 
     // Free all the memory
     for (unsigned i = 0; i < NUM_TURNSTILES; i++) {
-	delete[] names[i];
+	    delete[] names[i];
     }
     delete []values;
     delete []names;

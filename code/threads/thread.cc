@@ -20,6 +20,7 @@
 #include "thread.hh"
 #include "switch.h"
 #include "system.hh"
+#include "channel.hh"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -42,10 +43,25 @@ IsThreadStatus(ThreadStatus s)
 /// * `threadName` is an arbitrary string, useful for debugging.
 Thread::Thread(const char *threadName)
 {
-    name     = threadName;
-    stackTop = nullptr;
-    stack    = nullptr;
-    status   = JUST_CREATED;
+    name          = threadName;
+    stackTop      = nullptr;
+    stack         = nullptr;
+    status        = JUST_CREATED;
+    _willBeJoined = false;
+    joinChannel   = nullptr;
+#ifdef USER_PROGRAM
+    space        = nullptr;
+#endif
+}
+
+Thread::Thread(const char *threadName, bool willBeJoined)
+{
+    name          = threadName;
+    stackTop      = nullptr;
+    stack         = nullptr;
+    status        = JUST_CREATED;
+    _willBeJoined = willBeJoined;
+    joinChannel   = willBeJoined ? new Channel("Join Channel") : nullptr;
 #ifdef USER_PROGRAM
     space    = nullptr;
 #endif
@@ -68,6 +84,8 @@ Thread::~Thread()
         SystemDep::DeallocBoundedArray((char *) stack,
                                        STACK_SIZE * sizeof *stack);
     }
+
+    delete joinChannel;
 }
 
 /// Invoke `(*func)(arg)`, allowing caller and callee to execute
@@ -100,6 +118,13 @@ Thread::Fork(VoidFunctionPtr func, void *arg)
     scheduler->ReadyToRun(this);  // `ReadyToRun` assumes that interrupts
                                   // are disabled!
     interrupt->SetLevel(oldLevel);
+}
+
+void
+Thread::Join()
+{
+    int dummy;
+    joinChannel->Receive(&dummy);
 }
 
 /// Check a thread's stack to see if it has overrun the space that has been
@@ -155,6 +180,10 @@ Thread::Print() const
 void
 Thread::Finish()
 {
+    if (_willBeJoined) {
+        joinChannel->Send(0);
+    }
+
     interrupt->SetLevel(INT_OFF);
     ASSERT(this == currentThread);
 

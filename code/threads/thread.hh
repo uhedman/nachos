@@ -48,6 +48,7 @@
 
 #include <stdint.h>
 
+class Channel;
 
 /// CPU register state to be saved on context switch.
 ///
@@ -94,10 +95,13 @@ private:
     /// All registers except for `stackTop`.
     uintptr_t machineState[MACHINE_STATE_SIZE];
 
+    bool _willBeJoined;
+    Channel *joinChannel;
 public:
 
     /// Initialize a `Thread`.
     Thread(const char *debugName);
+    Thread(const char *debugName, bool willBeJoined);
 
     /// Deallocate a Thread.
     ///
@@ -109,6 +113,9 @@ public:
 
     /// Make thread run `(*func)(arg)`.
     void Fork(VoidFunctionPtr func, void *arg);
+
+    /// Make thread run `(*func)(arg)`.
+    void Join();
 
     /// Relinquish the CPU if any other thread is runnable.
     void Yield();
