@@ -13,6 +13,7 @@
 
 #include "thread_test_garden.hh"
 #include "thread_test_prod_cons.hh"
+#include "thread_test_prod_cons_channel.hh"
 #include "thread_test_simple.hh"
 #include "thread_test_garden_semaphore.hh"
 #include "thread_test_garden_lock.hh"
