@@ -16,19 +16,21 @@
 
 
 #include "condition.hh"
+#include "system.hh"
 
-
-/// Dummy functions -- so we can compile our later assignments.
-///
 
 Condition::Condition(const char *debugName, Lock *conditionLock)
 {
-    // TODO
+    name = debugName;
+    lock = conditionLock;
+    semaphore = new Semaphore(debugName, 0);
+    waiting = 0;
 }
 
 Condition::~Condition()
 {
-    // TODO
+    ASSERT(waiting == 0);
+    delete semaphore;
 }
 
 const char *
@@ -40,17 +42,46 @@ Condition::GetName() const
 void
 Condition::Wait()
 {
-    // TODO
+    ASSERT(lock->IsHeldByCurrentThread());
+
+    DEBUG('s', "Thread \"%s\" waiting on condition \"%s\"\n",
+        currentThread->GetName(), name);
+
+    waiting++;
+    
+    lock->Release();
+    semaphore->P();
+    lock->Acquire();
+
+    DEBUG('s', "Thread \"%s\" awoken on condition \"%s\"\n",
+        currentThread->GetName(), name);
 }
 
 void
 Condition::Signal()
 {
-    // TODO
+    ASSERT(lock->IsHeldByCurrentThread());
+
+    DEBUG('s', "Thread \"%s\" signaling condition \"%s\" (%u waiting)\n",
+        currentThread->GetName(), name, waiting);
+
+    if (waiting > 0) {
+        waiting--;
+        semaphore->V();
+    }
 }
 
 void
 Condition::Broadcast()
 {
-    // TODO
+    ASSERT(lock->IsHeldByCurrentThread());
+
+    DEBUG('s', "Thread \"%s\" broadcasting condition \"%s\" (%u waiting)\n",
+        currentThread->GetName(), name, waiting);
+
+    while (waiting > 0)
+    {
+        waiting--;
+        semaphore->V();
+    }
 }

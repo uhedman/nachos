@@ -76,7 +76,14 @@ private:
 
     const char *name;
 
-    // Other needed fields are to be added here.
+    /// Condition lock
+    Lock *lock;
+
+    /// Semaphore for sleep and awake threads
+    Semaphore *semaphore;
+
+    /// Waiting threads counter
+    unsigned waiting;
 };
 
 
