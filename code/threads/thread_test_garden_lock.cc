@@ -14,7 +14,6 @@
 
 static const unsigned NUM_TURNSTILES = 2;
 static const unsigned ITERATIONS_PER_TURNSTILE = 50;
-static bool done[NUM_TURNSTILES];
 static int count;
 static Lock *lock = new Lock("Ejercicio 1");
 
@@ -25,16 +24,19 @@ Turnstile(void *n_)
 
     for (unsigned i = 0; i < ITERATIONS_PER_TURNSTILE; i++) {
         lock->Acquire();
+
         int temp = count;
+
         printf("Turnstile %u yielding with temp=%u.\n", *n, temp);
         currentThread->Yield();
         printf("Turnstile %u back with temp=%u.\n", *n, temp);
+
         count = temp + 1;
+
         lock->Release();
         currentThread->Yield();
     }
     printf("Turnstile %u finished. Count is now %u.\n", *n, count);
-    done[*n] = true;
 }
 
 void

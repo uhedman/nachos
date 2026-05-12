@@ -18,7 +18,6 @@ static int items = 0;
 static Lock *bufferLock = new Lock("BufferLock");
 static Condition *conditionOccupied = new Condition("Buffer con items", bufferLock);
 static Condition *conditionFree = new Condition("Buffer con espacio", bufferLock);
-static bool producerDone = false;
 
 void
 Producer(void *_arg) {
@@ -41,8 +40,6 @@ Producer(void *_arg) {
 
         currentThread->Yield();
     }
-
-    producerDone = true;
 }
 
 void
@@ -72,15 +69,13 @@ Consumer(void *_arg) {
 void
 ThreadTestProdCons()
 {
-    Thread *consumer = new Thread("Consumer");
+    Thread *consumer = new Thread("Consumer", true);
+    Thread *producer = new Thread("Producer", true);
 
     consumer->Fork(Consumer, NULL);
-    Producer(NULL);
+    producer->Fork(Producer, NULL);
     
-    while (!producerDone)
-    {
-        currentThread->Yield();
-    }
+    consumer->Join();
     
     // Free space
     delete bufferLock;

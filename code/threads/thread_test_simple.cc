@@ -22,7 +22,6 @@ Semaphore* semaphore = new Semaphore("Ejercicio 15", 3);
 ///   purposes.
 
 const unsigned NUM_THREADS = 4;
-bool done[NUM_THREADS] = {false};
 
 void
 SimpleThread(void *name_)
@@ -47,15 +46,6 @@ SimpleThread(void *name_)
 
         currentThread->Yield();
     }
-    
-    // main thread is NULL
-    if (name_ != NULL) {
-        // Get threadId from currentThread name
-        unsigned threadId;
-        if (sscanf(currentThread->GetName(), "Thread-%u", &threadId) == 1) {
-            done[threadId] = true;
-        }
-    }
 
     printf("!!! Thread `%s` has finished SimpleThread\n", currentThread->GetName());
 }
@@ -67,14 +57,15 @@ SimpleThread(void *name_)
 void
 ThreadTestSimple()
 {
-    char **names = new char*[16];
+    char **names = new char*[NUM_THREADS];
+    Thread **threads = new Thread*[NUM_THREADS];
 
     // Generate threads and their names
     for (unsigned i = 0; i < NUM_THREADS; i++) {
         names[i] = new char[16];
         sprintf(names[i], "Thread-%u", i);
-        Thread *t = new Thread(names[i]);
-        t->Fork(SimpleThread, (void*)names[i]);
+        threads[i] = new Thread(names[i], true);
+        threads[i]->Fork(SimpleThread, (void*)names[i]);
     }
 
     //the "main" thread also executes the same function
@@ -82,9 +73,7 @@ ThreadTestSimple()
 
     //Wait for the threads to finish if needed
     for (unsigned i = 0; i < NUM_THREADS; i++) {
-        while (!done[i]) {
-            currentThread->Yield();
-        }
+        threads[i]->Join();
     }
 
     printf("Test finished\n");
@@ -94,4 +83,5 @@ ThreadTestSimple()
         delete [] names[i];
     }
     delete [] names;
+    delete [] threads;
 }

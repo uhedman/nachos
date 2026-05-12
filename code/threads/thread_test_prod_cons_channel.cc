@@ -13,7 +13,6 @@
 
 const static int NUM_ITEMS = 1000;
 static Channel *channel = new Channel("Channel");
-static bool consumerDone = false;
 
 void
 ProducerChannel(void *_arg) {
@@ -23,8 +22,6 @@ ProducerChannel(void *_arg) {
         channel->Send(i);
         currentThread->Yield();
     }
-
-    consumerDone = true;
 }
 
 void
@@ -42,15 +39,14 @@ ConsumerChannel(void *_arg) {
 void
 ThreadTestProdConsChannel()
 {
-    Thread *consumer = new Thread("Consumer");
+    Thread *consumer = new Thread("Consumer", true);
+    Thread *producer = new Thread("Producer", true);
 
     consumer->Fork(ConsumerChannel, NULL);
-    ProducerChannel(NULL);
+    producer->Fork(ProducerChannel, NULL);
     
-    while (!consumerDone)
-    {
-        currentThread->Yield();
-    }
+    consumer->Join();
+    producer->Join();
     
     // Free space
     delete channel;
