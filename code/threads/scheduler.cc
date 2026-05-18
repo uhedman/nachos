@@ -45,10 +45,10 @@ Scheduler::ReadyToRun(Thread *thread)
 {
     ASSERT(thread != nullptr);
 
-    DEBUG('t', "Putting thread %s on ready list\n", thread->GetName());
+    DEBUG('t', "Putting thread %s on ready list with priority %u\n", thread->GetName(), thread->GetPriority());
 
     thread->SetStatus(READY);
-    readyList->Append(thread);
+    readyList->SortedInsert(thread, thread->GetPriority());
 }
 
 /// Return the next thread to be scheduled onto the CPU.
@@ -122,6 +122,13 @@ Scheduler::Run(Thread *nextThread)
         currentThread->space->RestoreState();
     }
 #endif
+}
+
+void
+Scheduler::UpdatePriority(Thread *thread, unsigned newPriority)
+{
+    readyList->Remove(thread);
+    readyList->SortedInsert(thread, newPriority);
 }
 
 /// Print the scheduler state -- in other words, the contents of the ready

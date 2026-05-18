@@ -49,6 +49,7 @@ Thread::Thread(const char *threadName)
     status        = JUST_CREATED;
     _willBeJoined = false;
     joinChannel   = nullptr;
+    priority      = 4;
 #ifdef USER_PROGRAM
     space        = nullptr;
 #endif
@@ -62,6 +63,22 @@ Thread::Thread(const char *threadName, bool willBeJoined)
     status        = JUST_CREATED;
     _willBeJoined = willBeJoined;
     joinChannel   = willBeJoined ? new Channel("Join Channel") : nullptr;
+    priority      = 4;
+#ifdef USER_PROGRAM
+    space    = nullptr;
+#endif
+}
+
+Thread::Thread(const char *threadName, bool willBeJoined, unsigned initialPriority)
+{
+    ASSERT(initialPriority < MAX_PRIORITY);
+    name          = threadName;
+    stackTop      = nullptr;
+    stack         = nullptr;
+    status        = JUST_CREATED;
+    _willBeJoined = willBeJoined;
+    joinChannel   = willBeJoined ? new Channel("Join Channel") : nullptr;
+    priority      = initialPriority;
 #ifdef USER_PROGRAM
     space    = nullptr;
 #endif
@@ -158,6 +175,19 @@ const char *
 Thread::GetName() const
 {
     return name;
+}
+
+const unsigned
+Thread::GetPriority() const
+{
+    return priority;
+}
+
+void
+Thread::SetPriority(unsigned newPriority)
+{
+    priority = newPriority;
+    scheduler->UpdatePriority(currentThread, newPriority);
 }
 
 void

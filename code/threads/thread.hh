@@ -48,6 +48,8 @@
 
 #include <stdint.h>
 
+unsigned const MAX_PRIORITY = 9;
+
 class Channel;
 
 /// CPU register state to be saved on context switch.
@@ -95,13 +97,20 @@ private:
     /// All registers except for `stackTop`.
     uintptr_t machineState[MACHINE_STATE_SIZE];
 
+    /// Whether this thread will be joined or not
     bool _willBeJoined;
+
+    /// Channel for join funcionality
     Channel *joinChannel;
+
+    /// Thread priority for scheduling
+    unsigned priority;
 public:
 
     /// Initialize a `Thread`.
     Thread(const char *debugName);
     Thread(const char *debugName, bool willBeJoined);
+    Thread(const char *debugName, bool willBeJoined, unsigned initialPriority);
 
     /// Deallocate a Thread.
     ///
@@ -132,6 +141,11 @@ public:
     void SetStatus(ThreadStatus st);
 
     const char *GetName() const;
+
+    const unsigned GetPriority() const;
+
+    void SetPriority(unsigned newPriority);
+
 
     void Print() const;
 
