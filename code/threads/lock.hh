@@ -63,6 +63,9 @@ private:
 
     /// Current thread holder of this lock
     Thread *currentHolder;
+
+    /// Priority of the currentHolder
+    unsigned savedPriority;
 };
 
 

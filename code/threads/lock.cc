@@ -24,6 +24,7 @@ Lock::Lock(const char *debugName)
     name = debugName;
     semaphore = new Semaphore(debugName, 1);
     currentHolder = nullptr;
+    savedPriority = 0;
 }
 
 Lock::~Lock()
@@ -45,8 +46,19 @@ Lock::Acquire()
         currentThread->GetName(), this->GetName());
 
     ASSERT(!IsHeldByCurrentThread());
+
+    IntStatus oldLevel = interrupt->SetLevel(INT_OFF);
+    if (currentHolder != nullptr 
+        && currentHolder->GetPriority() < currentThread->GetPriority()) 
+    {
+        currentHolder->SetPriority(currentThread->GetPriority());
+    }
+    interrupt->SetLevel(oldLevel);
+
     semaphore->P();
+
     currentHolder = currentThread;
+    savedPriority = currentThread->GetPriority();
 
     DEBUG('s', "Thread \"%s\" acquired lock \"%s\"\n", 
         currentThread->GetName(), this->GetName());
@@ -59,11 +71,21 @@ Lock::Release()
         currentThread->GetName(), this->GetName());
 
     ASSERT(IsHeldByCurrentThread());
-    currentHolder = nullptr;
-    semaphore->V();
 
+    currentHolder = nullptr;
+    unsigned _savedPriority = savedPriority;
+    savedPriority = 0;
+
+    semaphore->V();
+    
     DEBUG('s', "Thread \"%s\" released lock \"%s\"\n", 
         currentThread->GetName(), this->GetName());
+
+    IntStatus oldLevel = interrupt->SetLevel(INT_OFF);
+    if (currentThread->GetPriority() != _savedPriority)
+        currentThread->SetPriority(_savedPriority);
+
+    interrupt->SetLevel(oldLevel);
 }
 
 bool
