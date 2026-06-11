@@ -100,15 +100,111 @@ SyscallHandler(ExceptionType _et)
                                     filename, sizeof filename)) {
                 DEBUG('e', "Error: filename string too long (maximum is %u bytes).\n",
                       FILE_NAME_MAX_LEN);
+                machine->WriteRegister(2, -1);
+                break;
             }
 
             DEBUG('e', "`Create` requested for file `%s`.\n", filename);
+            if (!fileSystem->Create(filename, 0)) {
+                DEBUG('e', "Error: could not create file `%s`.\n", filename);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "File `%s` created.\n", filename);
+            machine->WriteRegister(2, 0);
+            break;
+        }
+
+        case SC_REMOVE: {
+            int filenameAddr = machine->ReadRegister(4);
+            if (filenameAddr == 0) {
+                DEBUG('e', "Error: address to filename string is null.\n");
+            }
+
+            char filename[FILE_NAME_MAX_LEN + 1];
+            if (!ReadStringFromUser(filenameAddr,
+                                    filename, sizeof filename)) {
+                DEBUG('e', "Error: filename string too long (maximum is %u bytes).\n",
+                      FILE_NAME_MAX_LEN);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "`Remove` requested for file `%s`.\n", filename);
+            if (!fileSystem->Remove(filename)) {
+                DEBUG('e', "Error: could not remove file `%s`.\n", filename);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "File `%s` removed.\n", filename);
+            machine->WriteRegister(2, 0);
+            break;
+        }
+
+        case SC_OPEN: {
+            int filenameAddr = machine->ReadRegister(4);
+            if (filenameAddr == 0) {
+                DEBUG('e', "Error: address to filename string is null.\n");
+            }
+
+            char filename[FILE_NAME_MAX_LEN + 1];
+            if (!ReadStringFromUser(filenameAddr,
+                                    filename, sizeof filename)) {
+                DEBUG('e', "Error: filename string too long (maximum is %u bytes).\n",
+                      FILE_NAME_MAX_LEN);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "`Open` requested for file `%s`.\n", filename);
+            OpenFile *openFile = fileSystem->Open(filename);
+            if (openFile == nullptr) {
+                DEBUG('e', "Error: could not open file `%s`.\n", filename);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            int fid = currentThread->AddFile(openFile);
+            if (fid < 0) {
+                DEBUG('e', "Error: could not add file `%s` to thread's open files.\n", filename);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "File `%s` opened with id %u.\n", filename, fid);
+            machine->WriteRegister(2, fid);
             break;
         }
 
         case SC_CLOSE: {
             int fid = machine->ReadRegister(4);
             DEBUG('e', "`Close` requested for id %u.\n", fid);
+            OpenFile *openFile = currentThread->RemoveFile(fid);
+
+            DEBUG('e', "File with id %u closed.\n", fid);
+            machine->WriteRegister(2, 0);
+            break;
+        }
+
+        case SC_READ: {
+            int bufferAddr = machine->ReadRegister(4);
+            int size = machine->ReadRegister(5);
+            int fid = machine->ReadRegister(6);
+
+            DEBUG('e', "`Read` requested for id %u, size %u bytes, buffer address 0x%08x.\n",
+                  fid, size, bufferAddr);
+            break;
+        }
+
+        case SC_WRITE: {
+            int bufferAddr = machine->ReadRegister(4);
+            int size = machine->ReadRegister(5);
+            int fid = machine->ReadRegister(6);
+
+            DEBUG('e', "`Write` requested for id %u, size %u bytes, buffer address 0x%08x.\n",
+                  fid, size, bufferAddr);
             break;
         }
 

@@ -373,4 +373,16 @@ Thread::RestoreUserState()
     }
 }
 
+int
+Thread::AddFile(OpenFile *openFile)
+{
+    return openFiles->Add(openFile);
+}
+
+OpenFile*
+Thread::RemoveFile(int fid)
+{
+    return openFiles->Remove(fid);
+}
+
 #endif
