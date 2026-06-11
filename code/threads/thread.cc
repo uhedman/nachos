@@ -51,7 +51,10 @@ Thread::Thread(const char *threadName)
     joinChannel   = nullptr;
     priority      = 4;
 #ifdef USER_PROGRAM
-    space        = nullptr;
+    space     = nullptr;
+    openFiles = new Table<OpenFile *>();
+    openFiles->Add(nullptr);  // File ID 0 is for console input.
+    openFiles->Add(nullptr);  // File ID 1 is for console output.
 #endif
 }
 
@@ -65,7 +68,10 @@ Thread::Thread(const char *threadName, bool willBeJoined)
     joinChannel   = willBeJoined ? new Channel("Join Channel") : nullptr;
     priority      = 4;
 #ifdef USER_PROGRAM
-    space    = nullptr;
+    space     = nullptr;
+    openFiles = new Table<OpenFile *>();
+    openFiles->Add(nullptr);  // File ID 0 is for console input.
+    openFiles->Add(nullptr);  // File ID 1 is for console output.
 #endif
 }
 
@@ -80,7 +86,10 @@ Thread::Thread(const char *threadName, bool willBeJoined, unsigned initialPriori
     joinChannel   = willBeJoined ? new Channel("Join Channel") : nullptr;
     priority      = initialPriority;
 #ifdef USER_PROGRAM
-    space    = nullptr;
+    space     = nullptr;
+    openFiles = new Table<OpenFile *>();
+    openFiles->Add(nullptr);  // File ID 0 is for console input.
+    openFiles->Add(nullptr);  // File ID 1 is for console output.
 #endif
 }
 
@@ -103,6 +112,20 @@ Thread::~Thread()
     }
 
     delete joinChannel;
+#ifdef USER_PROGRAM
+    if (openFiles != nullptr) {
+        for (unsigned i = 0; i < Table<OpenFile *>::SIZE; i++) {
+            if (openFiles->HasKey(i)) {
+                OpenFile *file = openFiles->Remove(i);
+                if (file != nullptr) {
+                    delete file;
+                }
+            }
+        }
+
+        delete openFiles;
+    }
+#endif
 }
 
 /// Invoke `(*func)(arg)`, allowing caller and callee to execute
@@ -371,6 +394,24 @@ Thread::RestoreUserState()
     for (unsigned i = 0; i < NUM_TOTAL_REGS; i++) {
         machine->WriteRegister(i, userRegisters[i]);
     }
+}
+
+int
+Thread::AddFile(OpenFile *file)
+{
+    return openFiles->Add(file);
+}
+
+OpenFile *
+Thread::GetFile(int fid) const
+{
+    return openFiles->Get(fid);
+}
+
+OpenFile *
+Thread::RemoveFile(int fid)
+{
+    return openFiles->Remove(fid);
 }
 
 #endif

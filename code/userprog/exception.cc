@@ -26,6 +26,7 @@
 #include "syscall.h"
 #include "filesys/directory_entry.hh"
 #include "threads/system.hh"
+#include "machine/synch_console.hh"
 
 #include <stdio.h>
 
@@ -93,6 +94,8 @@ SyscallHandler(ExceptionType _et)
             int filenameAddr = machine->ReadRegister(4);
             if (filenameAddr == 0) {
                 DEBUG('e', "Error: address to filename string is null.\n");
+                machine->WriteRegister(2, -1);
+                break;
             }
 
             char filename[FILE_NAME_MAX_LEN + 1];
@@ -100,15 +103,260 @@ SyscallHandler(ExceptionType _et)
                                     filename, sizeof filename)) {
                 DEBUG('e', "Error: filename string too long (maximum is %u bytes).\n",
                       FILE_NAME_MAX_LEN);
+                machine->WriteRegister(2, -1);
+                break;
             }
 
             DEBUG('e', "`Create` requested for file `%s`.\n", filename);
+            if (!fileSystem->Create(filename, 0)) {
+                DEBUG('e', "Error: could not create file `%s`.\n", filename);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "File `%s` created successfully.\n", filename);
+            machine->WriteRegister(2, 0);
+            break;
+        }
+
+        case SC_REMOVE: {
+            int filenameAddr = machine->ReadRegister(4);
+            if (filenameAddr == 0) {
+                DEBUG('e', "Error: address to filename string is null.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            char filename[FILE_NAME_MAX_LEN + 1];
+            if (!ReadStringFromUser(filenameAddr,
+                                    filename, sizeof filename)) {
+                DEBUG('e', "Error: filename string too long (maximum is %u bytes).\n",
+                      FILE_NAME_MAX_LEN);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "`Remove` requested for file `%s`.\n", filename);
+            if (!fileSystem->Remove(filename)) {
+                DEBUG('e', "Error: could not remove file `%s`.\n", filename);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "File `%s` removed successfully.\n", filename);
+            machine->WriteRegister(2, 0);
+            break;
+        }
+
+        case SC_OPEN: {
+            int filenameAddr = machine->ReadRegister(4);
+            if (filenameAddr == 0) {
+                DEBUG('e', "Error: address to filename string is null.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            char filename[FILE_NAME_MAX_LEN + 1];
+            if (!ReadStringFromUser(filenameAddr,
+                                    filename, sizeof filename)) {
+                DEBUG('e', "Error: filename string too long (maximum is %u bytes).\n",
+                      FILE_NAME_MAX_LEN);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "`Open` requested for file `%s`.\n", filename);
+            OpenFile *file = fileSystem->Open(filename);
+            if (file == nullptr) {
+                DEBUG('e', "Error: could not open file `%s`.\n", filename);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "File `%s` opened successfully.\n", filename);
+            int fid = currentThread->AddFile(file);
+            if (fid == -1) {
+                DEBUG('e', "Error: too many open files.\n");
+                delete file;
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "File `%s` assigned id %u.\n", filename, fid);
+            machine->WriteRegister(2, fid);
             break;
         }
 
         case SC_CLOSE: {
             int fid = machine->ReadRegister(4);
             DEBUG('e', "`Close` requested for id %u.\n", fid);
+
+            if (fid < 2) {
+                DEBUG('e', "Error: invalid file id %d.\n", fid);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            OpenFile *file = currentThread->RemoveFile(fid);
+            if (file == nullptr) {
+                DEBUG('e', "Error: invalid file id %u.\n", fid);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            delete file;
+
+            DEBUG('e', "File id %u closed successfully.\n", fid);
+            machine->WriteRegister(2, 0);
+            break;
+        }
+
+        case SC_READ: {
+            int bufferAddr = machine->ReadRegister(4);
+            int size = machine->ReadRegister(5);
+            int fid = machine->ReadRegister(6);
+
+            if (bufferAddr == 0) {
+                DEBUG('e', "Error: address to read buffer is null.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            if (size < 0) {
+                DEBUG('e', "Error: number of bytes to read cannot be negative.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            if (size == 0) {
+                DEBUG('e', "`Read` requested for buffer at %u, size 0, id %u.\n",
+                      bufferAddr, fid);
+                machine->WriteRegister(2, 0);
+                break;
+            }
+
+            if (fid < 0) {
+                DEBUG('e', "Error: invalid file id %d.\n", fid);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "`Read` requested for buffer at %u, size %d, id %u.\n",
+                  bufferAddr, size, fid);
+            int bytesRead = 0;
+
+            if (fid == CONSOLE_INPUT) {
+                char *buffer = new char[size];
+                for (int i = 0; i < size; i++) {
+                    buffer[i] = synchConsole->GetChar();
+                }
+
+                WriteBufferToUser(buffer, bufferAddr, size);
+                
+                bytesRead = size;
+                delete[] buffer;
+            } else if (fid == CONSOLE_OUTPUT) {
+                DEBUG('e', "Error: cannot read from console output.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            } else {
+                OpenFile *file = currentThread->GetFile(fid);
+                if (file == nullptr) {
+                    DEBUG('e', "Error: invalid file id %u.\n", fid);
+                    machine->WriteRegister(2, -1);
+                    break;
+                }
+
+                char *buffer = new char[size];
+                bytesRead = file->Read(buffer, size);
+
+                if (bytesRead < 0) {
+                    DEBUG('e', "Error: could not read from file id %u.\n", fid);
+                    machine->WriteRegister(2, -1);
+                    delete[] buffer;
+                    break;
+                }
+                
+                if (bytesRead > 0) {
+                    WriteBufferToUser(buffer, bufferAddr, bytesRead);
+                }
+
+                delete[] buffer;
+            }
+
+            DEBUG('e', "`Read` completed successfully for id %u, bytes read: %d.\n",
+                  fid, bytesRead);
+            machine->WriteRegister(2, bytesRead);
+            break;
+        }
+
+        case SC_WRITE: {
+            int bufferAddr = machine->ReadRegister(4);
+            int size = machine->ReadRegister(5);
+            int fid = machine->ReadRegister(6);
+
+            if (bufferAddr == 0) {
+                DEBUG('e', "Error: address to write buffer is null.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            if (size < 0) {
+                DEBUG('e', "Error: number of bytes to write cannot be negative.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            if (size == 0) {
+                DEBUG('e', "`Write` requested for buffer at %u, size 0, id %u.\n",
+                      bufferAddr, fid);
+                machine->WriteRegister(2, 0);
+                break;
+            }
+
+            if (fid < 0) {
+                DEBUG('e', "Error: invalid file id %d.\n", fid);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "`Write` requested for buffer at %u, size %d, id %u.\n",
+                  bufferAddr, size, fid);
+            int bytesWritten = 0;
+
+            if (fid == CONSOLE_INPUT) {
+                DEBUG('e', "Error: cannot write to console input.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            } else if (fid == CONSOLE_OUTPUT) {
+                char *buffer = new char[size];
+                
+                ReadBufferFromUser(bufferAddr, buffer, size);
+
+                for (int i = 0; i < size; i++) {
+                    synchConsole->PutChar(buffer[i]);
+                }
+
+                bytesWritten = size;
+                delete[] buffer;
+            } else {
+                OpenFile *file = currentThread->GetFile(fid);
+                if (file == nullptr) {
+                    DEBUG('e', "Error: invalid file id %u.\n", fid);
+                    machine->WriteRegister(2, -1);
+                    break;
+                }
+                
+                char *buffer = new char[size];
+                ReadBufferFromUser(bufferAddr, buffer, size);
+                
+                bytesWritten = file->Write(buffer, size);
+                delete[] buffer;
+            }
+
+            DEBUG('e', "`Write` completed successfully for id %u, bytes written: %d.\n",
+                  fid, bytesWritten);
+            machine->WriteRegister(2, bytesWritten);
             break;
         }
 

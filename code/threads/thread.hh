@@ -44,6 +44,7 @@
 #ifdef USER_PROGRAM
 #include "machine/machine.hh"
 #include "userprog/address_space.hh"
+#include "lib/table.hh"
 #endif
 
 #include <stdint.h>
@@ -183,6 +184,20 @@ public:
 
     // User code this thread is running.
     AddressSpace *space;
+
+    // Open a file in the current thread.
+    int AddFile(OpenFile *file);
+
+    // Get the file corresponding to a given id.  Return null if no such file.
+    OpenFile *GetFile(int fid) const;
+
+    // Remove a file from the current thread.  Return the file, or null if no such file.
+    OpenFile *RemoveFile(int fid);
+
+private:
+
+    // Open files for current thread.
+    Table<OpenFile *> *openFiles;
 #endif
 };
 
