@@ -27,6 +27,7 @@
 #include "filesys/directory_entry.hh"
 #include "threads/system.hh"
 #include "machine/synch_console.hh"
+#include "args.hh"
 
 #include <stdio.h>
 
@@ -63,9 +64,18 @@ DefaultHandler(ExceptionType et)
 }
 
 static void
-ExecProcess(void* _args) {
+ExecProcess(void* args) {
 	currentThread->space->InitRegisters();
 	currentThread->space->RestoreState();
+
+	if (args != nullptr) {
+		unsigned argc = WriteArgs((char **)args);
+		int argv = machine->ReadRegister(STACK_REG);
+
+		machine->WriteRegister(4, argc);
+		machine->WriteRegister(5, argv);
+		machine->WriteRegister(STACK_REG, argv - 24);
+	}
 
 	machine->Run();
 	ASSERT(false); // machine->Run() never returns
@@ -161,6 +171,83 @@ SyscallHandler(ExceptionType _et)
             delete executable;
 
             newThread->Fork(ExecProcess, nullptr);
+            DEBUG('e', "Thread `%s` created successfully with PID %d.\n", filename, pid);
+
+            machine->WriteRegister(2, pid);
+            break;
+        }
+
+        case SC_EXEC2: {
+            int filenameAddr = machine->ReadRegister(4);
+            int joinable = machine->ReadRegister(5);
+            int argsAddr = machine->ReadRegister(6);
+
+            if (filenameAddr == 0) {
+                DEBUG('e', "Error: address to filename string is null.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            if (argsAddr == 0) {
+                DEBUG('e', "Error: address to arguments array is null.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            char filename[FILE_NAME_MAX_LEN + 1];
+            if (!ReadStringFromUser(filenameAddr,
+                                    filename, sizeof filename)) {
+                DEBUG('e', "Error: filename string too long (maximum is %u bytes).\n",
+                      FILE_NAME_MAX_LEN);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            char **argv = SaveArgs(argsAddr);
+            if (argv == nullptr) {
+                DEBUG('e', "Error: failed to save arguments for file `%s`.\n", filename);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "`Exec2` requested for file `%s`.\n", filename);
+            OpenFile *executable = fileSystem->Open(filename);
+            if (executable == nullptr) {
+                DEBUG('e', "Error: could not open file `%s`.\n", filename);
+                delete argv;
+                machine->WriteRegister(2, -1);
+                break;
+            }
+            
+            Thread *newThread = new Thread(filename, bool(joinable), currentThread->GetPriority());
+
+            SpaceId pid = processTable->Add(newThread);
+            if (pid == -1) {
+                DEBUG('e', "Error: too many processes.\n");
+                delete newThread;
+                delete executable;
+                delete argv;
+                machine->WriteRegister(2, -1);
+                break;
+            }
+            newThread->pid = pid;
+            
+            AddressSpace *space = new AddressSpace(executable);
+            if (!space->IsValid()) {
+                DEBUG('e', "Error: Insufficient memory to load `%s`.\n", filename);
+                delete space;
+                delete executable;
+                processTable->Remove(pid);
+                delete newThread;
+                delete argv;
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            newThread->space = space;
+            delete executable;
+
+            newThread->Fork(ExecProcess, argv);
             DEBUG('e', "Thread `%s` created successfully with PID %d.\n", filename, pid);
 
             machine->WriteRegister(2, pid);

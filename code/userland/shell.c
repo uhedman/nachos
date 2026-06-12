@@ -127,7 +127,8 @@ main(void)
             continue;
         }
 
-        const SpaceId newProc = Exec(cmd, !background);
+        // const SpaceId newProc = Exec(cmd, !background);
+        const SpaceId newProc = Exec2(cmd, !background, argv);
 
         if (newProc == -1) {
             WriteError("could not execute command.", OUTPUT);
