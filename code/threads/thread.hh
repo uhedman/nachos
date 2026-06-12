@@ -124,8 +124,8 @@ public:
     /// Make thread run `(*func)(arg)`.
     void Fork(VoidFunctionPtr func, void *arg);
 
-    /// Make thread run `(*func)(arg)`.
-    void Join();
+    /// Wait for this thread to finish.  Return the exit status.
+    int Join();
 
     /// Relinquish the CPU if any other thread is runnable.
     void Yield();
@@ -134,7 +134,7 @@ public:
     void Sleep();
 
     /// The thread is done executing.
-    void Finish();
+    void Finish(int exitStatus = 0);
 
     /// Check if thread has overflowed its stack.
     void CheckOverflow() const;
@@ -184,6 +184,9 @@ public:
 
     // User code this thread is running.
     AddressSpace *space;
+
+    // Process ID
+    int pid;
 
     // Open a file in the current thread.
     int AddFile(OpenFile *file);

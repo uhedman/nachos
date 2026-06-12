@@ -39,6 +39,9 @@ public:
     /// De-allocate an address space.
     ~AddressSpace();
 
+    /// Check if the address space was initialized successfully (e.g. enough memory)
+    bool IsValid() const;
+
     /// Initialize user-level CPU registers, before jumping to user code.
     void InitRegisters();
 

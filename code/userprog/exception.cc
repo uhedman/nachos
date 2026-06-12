@@ -62,6 +62,15 @@ DefaultHandler(ExceptionType et)
     ASSERT(false);
 }
 
+static void
+ExecProcess(void* _args) {
+	currentThread->space->InitRegisters();
+	currentThread->space->RestoreState();
+
+	machine->Run();
+	ASSERT(false); // machine->Run() never returns
+}
+
 /// Handle a system call exception.
 ///
 /// * `et` is the kind of exception.  The list of possible exceptions is in
@@ -89,6 +98,105 @@ SyscallHandler(ExceptionType _et)
             DEBUG('e', "Shutdown, initiated by user program.\n");
             interrupt->Halt();
             break;
+
+        case SC_EXIT: {
+            int status = machine->ReadRegister(4);
+            
+            DEBUG('e', "Exit with status %d, initiated by user program.\n", status);
+            currentThread->Finish(status);
+            break;
+        }
+
+        case SC_EXEC: {
+            int filenameAddr = machine->ReadRegister(4);
+            int joinable = machine->ReadRegister(5);
+
+            if (filenameAddr == 0) {
+                DEBUG('e', "Error: address to filename string is null.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            char filename[FILE_NAME_MAX_LEN + 1];
+            if (!ReadStringFromUser(filenameAddr,
+                                    filename, sizeof filename)) {
+                DEBUG('e', "Error: filename string too long (maximum is %u bytes).\n",
+                      FILE_NAME_MAX_LEN);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "`Exec` requested for file `%s`.\n", filename);
+            OpenFile *executable = fileSystem->Open(filename);
+            if (executable == nullptr) {
+                DEBUG('e', "Error: could not open file `%s`.\n", filename);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+            
+            Thread *newThread = new Thread(filename, bool(joinable), currentThread->GetPriority());
+
+            SpaceId pid = processTable->Add(newThread);
+            if (pid == -1) {
+                DEBUG('e', "Error: too many processes.\n");
+                delete newThread;
+                delete executable;
+                machine->WriteRegister(2, -1);
+                break;
+            }
+            newThread->pid = pid;
+            
+            AddressSpace *space = new AddressSpace(executable);
+            if (!space->IsValid()) {
+                DEBUG('e', "Error: Insufficient memory to load `%s`.\n", filename);
+                delete space;
+                delete executable;
+                processTable->Remove(pid);
+                delete newThread;
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            newThread->space = space;
+            delete executable;
+
+            newThread->Fork(ExecProcess, nullptr);
+            DEBUG('e', "Thread `%s` created successfully with PID %d.\n", filename, pid);
+
+            machine->WriteRegister(2, pid);
+            break;
+        }
+
+        case SC_JOIN: {
+            int pid = machine->ReadRegister(4);
+            DEBUG('e', "`Join` requested for pid %d.\n", pid);
+
+            if (pid < 0) {
+                DEBUG('e', "Error: invalid pid %d.\n", pid);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            Thread *child = processTable->Get(pid);
+            if (child == nullptr) {
+                DEBUG('e', "Error: invalid pid %d.\n", pid);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            if (child == currentThread) {
+                DEBUG('e', "Error: Thread cannot Join itself (PID %d).\n", pid);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            int exitStatus = child->Join();
+            DEBUG('e', "Thread `%s` successfully joined process %d. Exit status: %d.\n", 
+                  currentThread->GetName(), pid, exitStatus);
+
+            machine->WriteRegister(2, exitStatus);
+            break;
+        }
 
         case SC_CREATE: {
             int filenameAddr = machine->ReadRegister(4);

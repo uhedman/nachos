@@ -55,6 +55,7 @@ Thread::Thread(const char *threadName)
     openFiles = new Table<OpenFile *>();
     openFiles->Add(nullptr);  // File ID 0 is for console input.
     openFiles->Add(nullptr);  // File ID 1 is for console output.
+    pid       = -1;
 #endif
 }
 
@@ -72,6 +73,7 @@ Thread::Thread(const char *threadName, bool willBeJoined)
     openFiles = new Table<OpenFile *>();
     openFiles->Add(nullptr);  // File ID 0 is for console input.
     openFiles->Add(nullptr);  // File ID 1 is for console output.
+    pid       = -1;
 #endif
 }
 
@@ -90,6 +92,7 @@ Thread::Thread(const char *threadName, bool willBeJoined, unsigned initialPriori
     openFiles = new Table<OpenFile *>();
     openFiles->Add(nullptr);  // File ID 0 is for console input.
     openFiles->Add(nullptr);  // File ID 1 is for console output.
+    pid       = -1;
 #endif
 }
 
@@ -113,6 +116,15 @@ Thread::~Thread()
 
     delete joinChannel;
 #ifdef USER_PROGRAM
+    if (processTable != nullptr && pid != -1) {
+        processTable->Remove(pid);
+    }
+
+    if (space != nullptr) {
+        delete space;
+        space = nullptr;
+    }
+
     if (openFiles != nullptr) {
         for (unsigned i = 0; i < Table<OpenFile *>::SIZE; i++) {
             if (openFiles->HasKey(i)) {
@@ -124,6 +136,7 @@ Thread::~Thread()
         }
 
         delete openFiles;
+        openFiles = nullptr;
     }
 #endif
 }
@@ -160,11 +173,13 @@ Thread::Fork(VoidFunctionPtr func, void *arg)
     interrupt->SetLevel(oldLevel);
 }
 
-void
+int
 Thread::Join()
 {
-    int dummy;
-    joinChannel->Receive(&dummy);
+    int exitStatus;
+    joinChannel->Receive(&exitStatus);
+
+    return exitStatus;
 }
 
 /// Check a thread's stack to see if it has overrun the space that has been
@@ -231,16 +246,16 @@ Thread::Print() const
 /// NOTE: we disable interrupts, so that we do not get a time slice between
 /// setting `threadToBeDestroyed`, and going to sleep.
 void
-Thread::Finish()
+Thread::Finish(int exitStatus)
 {
     if (_willBeJoined) {
-        joinChannel->Send(0);
+        joinChannel->Send(exitStatus);
     }
 
     interrupt->SetLevel(INT_OFF);
     ASSERT(this == currentThread);
 
-    DEBUG('t', "Finishing thread \"%s\"\n", GetName());
+    DEBUG('t', "Finishing thread \"%s\" with exit status %d\n", GetName(), exitStatus);
 
     threadToBeDestroyed = currentThread;
     Sleep();  // Invokes `SWITCH`.

@@ -30,9 +30,12 @@ AddressSpace::AddressSpace(OpenFile *executable_file)
     numPages = DivRoundUp(size, PAGE_SIZE);
     size = numPages * PAGE_SIZE;
 
-    ASSERT(numPages <= machine->GetNumPhysicalPages());
-      // Check we are not trying to run anything too big -- at least until we
-      // have virtual memory.
+    if (numPages > physicalMemoryMap->CountClear()) {
+        DEBUG('a', "Error: Not enough physical memory to load program (need %u pages, have %u clear).\n",
+              numPages, physicalMemoryMap->CountClear());
+        pageTable = nullptr;
+        return;
+    }
 
     DEBUG('a', "Initializing address space, num pages %u, size %u\n",
           numPages, size);
@@ -42,8 +45,19 @@ AddressSpace::AddressSpace(OpenFile *executable_file)
     pageTable = new TranslationEntry[numPages];
     for (unsigned i = 0; i < numPages; i++) {
         pageTable[i].virtualPage  = i;
-          // For now, virtual page number = physical page number.
-        pageTable[i].physicalPage = i;
+        
+        int free = physicalMemoryMap->Find();
+        if (free == -1) {
+            DEBUG('a', "Error: Not enough physical memory to load program.\n");
+            for (unsigned j = 0; j < i; j++) {
+                physicalMemoryMap->Clear(pageTable[j].physicalPage);
+            }
+            delete [] pageTable;
+            pageTable = nullptr;
+            return;
+        }
+
+        pageTable[i].physicalPage = free;
         pageTable[i].valid        = true;
         pageTable[i].use          = false;
         pageTable[i].dirty        = false;
@@ -53,10 +67,10 @@ AddressSpace::AddressSpace(OpenFile *executable_file)
     }
 
     char *mainMemory = machine->mainMemory;
-
-    // Zero out the entire address space, to zero the unitialized data
-    // segment and the stack segment.
-    memset(mainMemory, 0, size);
+    for (unsigned i = 0; i < numPages; i++) {
+        uint32_t pAddr = pageTable[i].physicalPage * PAGE_SIZE;
+        memset(&mainMemory[pAddr], 0, PAGE_SIZE);
+    }
 
     // Then, copy in the code and data segments into memory.
     uint32_t codeSize = exe.GetCodeSize();
@@ -64,16 +78,28 @@ AddressSpace::AddressSpace(OpenFile *executable_file)
     if (codeSize > 0) {
         uint32_t virtualAddr = exe.GetCodeAddr();
         DEBUG('a', "Initializing code segment, at 0x%X, size %u\n",
-              virtualAddr, codeSize);
-        exe.ReadCodeBlock(&mainMemory[virtualAddr], codeSize, 0);
+            virtualAddr, codeSize);
+
+        for (uint32_t i = 0; i < codeSize; i++) {
+            uint32_t vAddr = virtualAddr + i;
+            uint32_t vPage = vAddr / PAGE_SIZE;
+            uint32_t offset = vAddr % PAGE_SIZE;
+            uint32_t pAddr = (pageTable[vPage].physicalPage * PAGE_SIZE) + offset;
+            exe.ReadCodeBlock(&mainMemory[pAddr], 1, i);
+        }
     }
     if (initDataSize > 0) {
         uint32_t virtualAddr = exe.GetInitDataAddr();
         DEBUG('a', "Initializing data segment, at 0x%X, size %u\n",
-              virtualAddr, initDataSize);
-        exe.ReadDataBlock(&mainMemory[virtualAddr], initDataSize, 0);
+            virtualAddr, initDataSize);
+        for (uint32_t i = 0; i < initDataSize; i++) {
+            uint32_t vAddr = virtualAddr + i;
+            uint32_t vPage = vAddr / PAGE_SIZE;
+            uint32_t offset = vAddr % PAGE_SIZE;
+            uint32_t pAddr = (pageTable[vPage].physicalPage * PAGE_SIZE) + offset;
+            exe.ReadDataBlock(&mainMemory[pAddr], 1, i);
+        }
     }
-
 }
 
 /// Deallocate an address space.
@@ -81,7 +107,20 @@ AddressSpace::AddressSpace(OpenFile *executable_file)
 /// Nothing for now!
 AddressSpace::~AddressSpace()
 {
-    delete [] pageTable;
+    if (pageTable != nullptr) {
+        for (unsigned int i = 0; i < numPages; i++) {
+            if (pageTable[i].valid) {
+                physicalMemoryMap->Clear(pageTable[i].physicalPage);
+            }
+        }
+        delete [] pageTable;
+    }
+}
+
+bool
+AddressSpace::IsValid() const
+{
+    return pageTable != nullptr;
 }
 
 /// Set the initial values for the user-level register set.

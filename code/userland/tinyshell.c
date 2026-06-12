@@ -21,8 +21,21 @@ main(void)
         buffer[--i] = '\0';
 
         if (i > 0) {
-            newProc = Exec(buffer);
-            Join(newProc);
+            int background = 0;
+            char *cmd = buffer;
+            if (buffer[0] == '&') {
+                background = 1;
+                cmd = &buffer[1];
+                while (*cmd == ' ' || *cmd == '\t') {
+                    cmd++;
+                }
+            }
+            if (*cmd != '\0') {
+                newProc = Exec(cmd, !background);
+                if (newProc != -1 && !background) {
+                    Join(newProc);
+                }
+            }
         }
     }
 
