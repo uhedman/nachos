@@ -26,7 +26,9 @@ bool CountArgsToSave(int address, unsigned *count)
     int val;
     unsigned c = 0;
     do {
-        machine->ReadMem(address + 4 * c, 4, &val);
+        if (!machine->ReadMem(address + 4 * c, 4, &val))
+            ASSERT(machine->ReadMem(address + 4 * c, 4, &val));
+
         c++;
     } while (c < MAX_ARG_COUNT && val != 0);
     if (c == MAX_ARG_COUNT && val != 0) {
@@ -60,7 +62,9 @@ SaveArgs(int address)
         args[i] = new char [MAX_ARG_LENGTH];
         int strAddr;
         // For each pointer, read the corresponding string.
-        machine->ReadMem(address + i * 4, 4, &strAddr);
+        if (!machine->ReadMem(address + i * 4, 4, &strAddr))
+            ASSERT(machine->ReadMem(address + i * 4, 4, &strAddr));
+
         ReadStringFromUser(strAddr, args[i], MAX_ARG_LENGTH);
     }
     args[count] = nullptr;  // Write the trailing null.
@@ -97,9 +101,11 @@ WriteArgs(char **args)
     sp -= c * 4 + 4;  // Make room for `argv`, including the trailing null.
     // Write each argument's address.
     for (unsigned i = 0; i < c; i++) {
-        machine->WriteMem(sp + 4 * i, 4, argsAddress[i]);
+        if (!machine->WriteMem(sp + 4 * i, 4, argsAddress[i]))
+            ASSERT(machine->WriteMem(sp + 4 * i, 4, argsAddress[i]));
     }
-    machine->WriteMem(sp + 4 * c, 4, 0);  // The last is null.
+    if (!machine->WriteMem(sp + 4 * c, 4, 0))  // The last is null.
+        ASSERT(machine->WriteMem(sp + 4 * c, 4, 0));
 
     machine->WriteRegister(STACK_REG, sp);
     return c;

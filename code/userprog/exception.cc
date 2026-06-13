@@ -564,6 +564,41 @@ SyscallHandler(ExceptionType _et)
     IncrementPC();
 }
 
+static void
+PageFaultHandler(ExceptionType _et)
+{
+#ifdef USE_TLB
+    int vaddr = machine->ReadRegister(BAD_VADDR_REG);
+    unsigned vpn = (unsigned) vaddr / PAGE_SIZE;
+
+    DEBUG('e', "PageFault detected. Virtual address: %u, Virtual page number: %u\n", vaddr, vpn);
+
+    if (vpn >= currentThread->space->GetNumPages()) {
+        DEBUG('e', "Error: invalid virtual page number %u.\n", vpn);
+        currentThread->Finish(-1);
+        return;
+    }
+
+    TranslationEntry *pageTable = currentThread->space->GetPageTable();
+    TranslationEntry entry = pageTable[vpn];
+    TranslationEntry *tlb = machine->GetMMU()->tlb;
+    static unsigned tlbVictimIdx = 0;
+
+    if (tlb[tlbVictimIdx].valid) {
+        unsigned victimVpn = tlb[tlbVictimIdx].virtualPage;
+        pageTable[victimVpn].use = tlb[tlbVictimIdx].use;
+        pageTable[victimVpn].dirty = tlb[tlbVictimIdx].dirty;
+    }
+
+    DEBUG('v', "Replacing entry at index %u (circular replacement).\n", tlbVictimIdx);
+    tlb[tlbVictimIdx] = entry;
+
+    tlbVictimIdx = (tlbVictimIdx + 1) % TLB_SIZE;
+#else
+    DEBUG('e', "PageFault detected, but no TLB is in use.\n");
+    currentThread->Finish(-1);
+#endif
+}
 
 /// By default, only system calls have their own handler.  All other
 /// exception types are assigned the default handler.
@@ -572,7 +607,7 @@ SetExceptionHandlers()
 {
     machine->SetHandler(NO_EXCEPTION,            &DefaultHandler);
     machine->SetHandler(SYSCALL_EXCEPTION,       &SyscallHandler);
-    machine->SetHandler(PAGE_FAULT_EXCEPTION,    &DefaultHandler);
+	machine->SetHandler(PAGE_FAULT_EXCEPTION,    &PageFaultHandler);
     machine->SetHandler(READ_ONLY_EXCEPTION,     &DefaultHandler);
     machine->SetHandler(BUS_ERROR_EXCEPTION,     &DefaultHandler);
     machine->SetHandler(ADDRESS_ERROR_EXCEPTION, &DefaultHandler);

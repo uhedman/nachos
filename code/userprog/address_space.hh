@@ -50,6 +50,10 @@ public:
     void SaveState();
     void RestoreState();
 
+    TranslationEntry *GetPageTable() const { return pageTable; }
+
+    unsigned GetNumPages() const { return numPages; }
+
 private:
 
     /// Assume linear page table translation for now!

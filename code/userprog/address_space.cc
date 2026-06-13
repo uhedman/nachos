@@ -157,15 +157,32 @@ AddressSpace::InitRegisters()
 /// For now, nothing!
 void
 AddressSpace::SaveState()
-{}
+{
+#ifdef USE_TLB
+    TranslationEntry *tlb = machine->GetMMU()->tlb;
+    for (unsigned i = 0; i < TLB_SIZE; i++) {
+        TranslationEntry tlbPage = tlb[i];
+        if (tlbPage.valid) {
+            pageTable[tlbPage.virtualPage].use   = tlbPage.use;
+            pageTable[tlbPage.virtualPage].dirty = tlbPage.dirty;
+        }
+    }
+#endif
+}
 
 /// On a context switch, restore the machine state so that this address space
 /// can run.
-///
-/// For now, tell the machine where to find the page table.
 void
 AddressSpace::RestoreState()
 {
+#ifdef USE_TLB
+DEBUG('v', "Clearing TLB for new process\n");
+    TranslationEntry *tlb = machine->GetMMU()->tlb;
+    for (unsigned i = 0; i < TLB_SIZE; i++) {
+        tlb[i].valid = false;
+    }
+#else
     machine->GetMMU()->pageTable     = pageTable;
     machine->GetMMU()->pageTableSize = numPages;
+#endif
 }
