@@ -1,24 +1,18 @@
 #include "syscall.h"
+#include "lib.c"
 
 
 int
 main(void)
 {
-    SpaceId    newProc;
-    OpenFileId input  = CONSOLE_INPUT;
-    OpenFileId output = CONSOLE_OUTPUT;
-    char       prompt[2] = { '-', '-' };
-    char       ch, buffer[60];
+    SpaceId newProc;
+    const char prompt[] = "--";
+    char       buffer[60];
     int        i;
 
     for (;;) {
-        Write(prompt, 2, output);
-        i = 0;
-        do {
-            Read(&buffer[i], 1, input);
-        } while (buffer[i++] != '\n');
-
-        buffer[--i] = '\0';
+        PrintString(prompt);
+        i = ReadLine(buffer, sizeof(buffer));
 
         if (i > 0) {
             int background = 0;
