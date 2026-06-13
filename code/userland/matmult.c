@@ -7,6 +7,7 @@
 
 
 #include "syscall.h"
+// #include "lib.c"
 
 
 /// Sum total of the arrays does not fit in physical memory.
@@ -38,6 +39,17 @@ main(void)
             }
         }
     }
+
+    // myPuts("Result of matrix multiplication:");
+    // for (i = 0; i < DIM; i++) {
+    //     for (j = 0; j < DIM; j++) {
+    //         char str[12];
+    //         itoa(C[i][j], str);
+    //         PrintString(str);
+    //         PrintString(" ");
+    //     }
+    //     PrintString("\n");
+    // }
 
     // And then we are done.
     return C[DIM - 1][DIM - 1];

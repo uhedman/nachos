@@ -7,6 +7,7 @@
 
 
 #include "syscall.h"
+// #include "lib.c"
 
 
 #define DIM  1024
@@ -34,6 +35,12 @@ main(void)
             }
         }
     }
+
+    // for (i = 0; i < DIM; i++) {
+    //     char str[12];
+    //     itoa(A[i], str);
+    //     myPuts(str);
+    // }
 
     // And then we're done -- should be 0!
     return A[0];

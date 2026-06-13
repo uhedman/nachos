@@ -32,8 +32,10 @@
 #include "machine.hh"
 #include "endianness.hh"
 
+#include "statistics.hh"
 #include <stdio.h>
 extern Machine* machine;
+extern Statistics* stats;
 
 
 MMU::MMU(unsigned aNumPhysPages)
@@ -193,6 +195,7 @@ MMU::RetrievePageEntry(unsigned vpn, TranslationEntry **entry) const
 
     } else {
         // Use the TLB.
+        stats->tlbAccesses++;
 
         unsigned i;
         for (i = 0; i < TLB_SIZE; i++) {
@@ -204,6 +207,8 @@ MMU::RetrievePageEntry(unsigned vpn, TranslationEntry **entry) const
         }
 
         // Not found.
+        stats->tlbMisses++;
+        stats->numPageFaults++;
         DEBUG_CONT('a', "no valid TLB entry found for this virtual page!\n");
         return PAGE_FAULT_EXCEPTION;  // Really, this is a TLB fault, the
                                       // page may be in memory, but not in
