@@ -30,12 +30,14 @@ AddressSpace::AddressSpace(OpenFile *executable_file)
     numPages = DivRoundUp(size, PAGE_SIZE);
     size = numPages * PAGE_SIZE;
 
+#ifndef DEMAND_LOADING
     if (numPages > physicalMemoryMap->CountClear()) {
         DEBUG('a', "Error: Not enough physical memory to load program (need %u pages, have %u clear).\n",
               numPages, physicalMemoryMap->CountClear());
         pageTable = nullptr;
         return;
     }
+#endif
 
     DEBUG('a', "Initializing address space, num pages %u, size %u\n",
           numPages, size);
@@ -46,6 +48,10 @@ AddressSpace::AddressSpace(OpenFile *executable_file)
     for (unsigned i = 0; i < numPages; i++) {
         pageTable[i].virtualPage  = i;
         
+#ifdef DEMAND_LOADING
+        pageTable[i].physicalPage = 0;
+        pageTable[i].valid        = false;
+#else
         int free = physicalMemoryMap->Find();
         if (free == -1) {
             DEBUG('a', "Error: Not enough physical memory to load program.\n");
@@ -59,6 +65,7 @@ AddressSpace::AddressSpace(OpenFile *executable_file)
 
         pageTable[i].physicalPage = free;
         pageTable[i].valid        = true;
+#endif
         pageTable[i].use          = false;
         pageTable[i].dirty        = false;
         pageTable[i].readOnly     = false;
@@ -66,6 +73,9 @@ AddressSpace::AddressSpace(OpenFile *executable_file)
           // set its pages to be read-only.
     }
 
+#ifdef DEMAND_LOADING
+    executableFile = executable_file;
+#else
     char *mainMemory = machine->mainMemory;
     for (unsigned i = 0; i < numPages; i++) {
         uint32_t pAddr = pageTable[i].physicalPage * PAGE_SIZE;
@@ -100,6 +110,7 @@ AddressSpace::AddressSpace(OpenFile *executable_file)
             exe.ReadDataBlock(&mainMemory[pAddr], 1, i);
         }
     }
+#endif
 }
 
 /// Deallocate an address space.
@@ -115,6 +126,11 @@ AddressSpace::~AddressSpace()
         }
         delete [] pageTable;
     }
+#ifdef DEMAND_LOADING
+    if (executableFile != nullptr) {
+        delete executableFile;
+    }
+#endif
 }
 
 bool
@@ -184,5 +200,56 @@ DEBUG('v', "Clearing TLB for new process\n");
 #else
     machine->GetMMU()->pageTable     = pageTable;
     machine->GetMMU()->pageTableSize = numPages;
+#endif
+}
+
+bool
+AddressSpace::LoadPage(unsigned vpn) {
+#ifdef DEMAND_LOADING
+    int freeFrame = physicalMemoryMap->Find();
+    if (freeFrame == -1) {
+        return false;
+    }
+
+    char *mainMemory = machine->mainMemory;
+    uint32_t pAddr = freeFrame * PAGE_SIZE;
+
+    memset(&mainMemory[pAddr], 0, PAGE_SIZE);
+
+    Executable exe(executableFile);
+    ASSERT(exe.CheckMagic());
+
+    uint32_t pageStart = vpn * PAGE_SIZE;
+    uint32_t pageEnd = pageStart + PAGE_SIZE;
+
+    uint32_t codeStart = exe.GetCodeAddr();
+    uint32_t codeEnd = codeStart + exe.GetCodeSize();
+    uint32_t overlapCodeStart = (pageStart > codeStart) ? pageStart : codeStart;
+    uint32_t overlapCodeEnd = (pageEnd < codeEnd) ? pageEnd : codeEnd;
+
+    if (overlapCodeStart < overlapCodeEnd) {
+        uint32_t size = overlapCodeEnd - overlapCodeStart;
+        uint32_t offsetInPage = overlapCodeStart - pageStart;
+        uint32_t offsetInSegment = overlapCodeStart - codeStart;
+        exe.ReadCodeBlock(&mainMemory[pAddr + offsetInPage], size, offsetInSegment);
+    }
+
+    uint32_t dataStart = exe.GetInitDataAddr();
+    uint32_t dataEnd = dataStart + exe.GetInitDataSize();
+    uint32_t overlapDataStart = (pageStart > dataStart) ? pageStart : dataStart;
+    uint32_t overlapDataEnd = (pageEnd < dataEnd) ? pageEnd : dataEnd;
+
+    if (overlapDataStart < overlapDataEnd) {
+        uint32_t size = overlapDataEnd - overlapDataStart;
+        uint32_t offsetInPage = overlapDataStart - pageStart;
+        uint32_t offsetInSegment = overlapDataStart - dataStart;
+        exe.ReadDataBlock(&mainMemory[pAddr + offsetInPage], size, offsetInSegment);
+    }
+
+    pageTable[vpn].physicalPage = freeFrame;
+    pageTable[vpn].valid = true;
+    return true;
+#else
+    return false;
 #endif
 }

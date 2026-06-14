@@ -168,7 +168,9 @@ SyscallHandler(ExceptionType _et)
             }
 
             newThread->space = space;
+#ifndef DEMAND_LOADING
             delete executable;
+#endif
 
             newThread->Fork(ExecProcess, nullptr);
             DEBUG('e', "Thread `%s` created successfully with PID %d.\n", filename, pid);
@@ -245,7 +247,9 @@ SyscallHandler(ExceptionType _et)
             }
 
             newThread->space = space;
+#ifndef DEMAND_LOADING
             delete executable;
+#endif
 
             newThread->Fork(ExecProcess, argv);
             DEBUG('e', "Thread `%s` created successfully with PID %d.\n", filename, pid);
@@ -567,7 +571,6 @@ SyscallHandler(ExceptionType _et)
 static void
 PageFaultHandler(ExceptionType _et)
 {
-#ifdef USE_TLB
     int vaddr = machine->ReadRegister(BAD_VADDR_REG);
     unsigned vpn = (unsigned) vaddr / PAGE_SIZE;
 
@@ -580,6 +583,18 @@ PageFaultHandler(ExceptionType _et)
     }
 
     TranslationEntry *pageTable = currentThread->space->GetPageTable();
+
+#ifdef DEMAND_LOADING
+    if (!pageTable[vpn].valid) {
+        if (!currentThread->space->LoadPage(vpn)) {
+            DEBUG('e', "Error: Not enough physical memory to load page %u.\n", vpn);
+            currentThread->Finish(-1);
+            return;
+        }
+    }
+#endif
+
+#ifdef USE_TLB
     TranslationEntry entry = pageTable[vpn];
     TranslationEntry *tlb = machine->GetMMU()->tlb;
     static unsigned tlbVictimIdx = 0;
@@ -595,8 +610,10 @@ PageFaultHandler(ExceptionType _et)
 
     tlbVictimIdx = (tlbVictimIdx + 1) % TLB_SIZE;
 #else
+#ifndef DEMAND_LOADING
     DEBUG('e', "PageFault detected, but no TLB is in use.\n");
     currentThread->Finish(-1);
+#endif
 #endif
 }
 

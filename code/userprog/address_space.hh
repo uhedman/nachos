@@ -54,7 +54,13 @@ public:
 
     unsigned GetNumPages() const { return numPages; }
 
+    bool LoadPage(unsigned vpn);
+
 private:
+
+#ifdef DEMAND_LOADING
+    OpenFile *executableFile;
+#endif
 
     /// Assume linear page table translation for now!
     TranslationEntry *pageTable;
