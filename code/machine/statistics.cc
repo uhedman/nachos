@@ -21,8 +21,14 @@ Statistics::Statistics()
     numDiskReads = numDiskWrites = 0;
     numConsoleCharsRead = numConsoleCharsWritten = 0;
     numPageFaults = 0;
+#ifdef USE_TLB
     tlbAccesses = 0;
     tlbMisses = 0;
+#endif
+#ifdef USE_SWAP
+    numSwapIns = 0;
+    numSwapOuts = 0;
+#endif
 #ifdef DFS_TICKS_FIX
     tickResets = 0;
 #endif
@@ -51,5 +57,8 @@ Statistics::Print()
            tlbAccesses, tlbAccesses - tlbMisses,
            (double)(tlbAccesses - tlbMisses) * 100.0 / tlbAccesses,
            tlbMisses, (double)tlbMisses * 100.0 / tlbAccesses);
+#endif
+#ifdef USE_SWAP
+    printf("Swap: ins %lu, outs %lu\n", numSwapIns, numSwapOuts);
 #endif
 }

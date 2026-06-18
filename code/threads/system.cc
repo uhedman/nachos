@@ -41,7 +41,11 @@ SynchDisk *synchDisk;
 Machine *machine;  ///< User program memory and registers.
 SynchConsole *synchConsole;
 Table<Thread *> *processTable;
+#ifdef USE_SWAP
+Coremap *physicalMemoryMap;
+#else
 Bitmap *physicalMemoryMap;
+#endif
 #endif
 
 // External definition, to allow us to take a pointer to this function.
@@ -199,7 +203,11 @@ Initialize(int argc, char **argv)
     synchConsole = new SynchConsole(nullptr, nullptr);
     processTable = new Table<Thread *>();
     currentThread->pid = processTable->Add(currentThread);
+#ifdef USE_SWAP
+    physicalMemoryMap = new Coremap(numPhysicalPages);
+#else
     physicalMemoryMap = new Bitmap(numPhysicalPages);
+#endif
 #endif
 
 #ifdef FILESYS
@@ -223,7 +231,6 @@ Cleanup()
     delete synchConsole;
     delete processTable;
     processTable = nullptr;
-    delete physicalMemoryMap;
 #endif
 
 #ifdef FILESYS_NEEDED
@@ -244,6 +251,10 @@ Cleanup()
     Thread *t = currentThread;
     currentThread = NULL;
     delete t; 
+
+#ifdef USER_PROGRAM
+    delete physicalMemoryMap;
+#endif
 
     exit(0);
 }

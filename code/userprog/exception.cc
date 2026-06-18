@@ -574,47 +574,14 @@ PageFaultHandler(ExceptionType _et)
     int vaddr = machine->ReadRegister(BAD_VADDR_REG);
     unsigned vpn = (unsigned) vaddr / PAGE_SIZE;
 
+    stats->numPageFaults++;
     DEBUG('e', "PageFault detected. Virtual address: %u, Virtual page number: %u\n", vaddr, vpn);
 
-    if (vpn >= currentThread->space->GetNumPages()) {
-        DEBUG('e', "Error: invalid virtual page number %u.\n", vpn);
+    if (!currentThread->space->LoadPage(vpn)) {
+        DEBUG('e', "Error: could not load page %u.\n", vpn);
         currentThread->Finish(-1);
         return;
     }
-
-    TranslationEntry *pageTable = currentThread->space->GetPageTable();
-
-#ifdef DEMAND_LOADING
-    if (!pageTable[vpn].valid) {
-        if (!currentThread->space->LoadPage(vpn)) {
-            DEBUG('e', "Error: Not enough physical memory to load page %u.\n", vpn);
-            currentThread->Finish(-1);
-            return;
-        }
-    }
-#endif
-
-#ifdef USE_TLB
-    TranslationEntry entry = pageTable[vpn];
-    TranslationEntry *tlb = machine->GetMMU()->tlb;
-    static unsigned tlbVictimIdx = 0;
-
-    if (tlb[tlbVictimIdx].valid) {
-        unsigned victimVpn = tlb[tlbVictimIdx].virtualPage;
-        pageTable[victimVpn].use = tlb[tlbVictimIdx].use;
-        pageTable[victimVpn].dirty = tlb[tlbVictimIdx].dirty;
-    }
-
-    DEBUG('v', "Replacing entry at index %u (circular replacement).\n", tlbVictimIdx);
-    tlb[tlbVictimIdx] = entry;
-
-    tlbVictimIdx = (tlbVictimIdx + 1) % TLB_SIZE;
-#else
-#ifndef DEMAND_LOADING
-    DEBUG('e', "PageFault detected, but no TLB is in use.\n");
-    currentThread->Finish(-1);
-#endif
-#endif
 }
 
 /// By default, only system calls have their own handler.  All other

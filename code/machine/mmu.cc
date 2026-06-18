@@ -195,6 +195,7 @@ MMU::RetrievePageEntry(unsigned vpn, TranslationEntry **entry) const
 
     } else {
         // Use the TLB.
+#ifdef USE_TLB
         stats->tlbAccesses++;
 
         unsigned i;
@@ -208,7 +209,7 @@ MMU::RetrievePageEntry(unsigned vpn, TranslationEntry **entry) const
 
         // Not found.
         stats->tlbMisses++;
-        stats->numPageFaults++;
+#endif
         DEBUG_CONT('a', "no valid TLB entry found for this virtual page!\n");
         return PAGE_FAULT_EXCEPTION;  // Really, this is a TLB fault, the
                                       // page may be in memory, but not in

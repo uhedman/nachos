@@ -47,8 +47,21 @@ public:
     /// Number of virtual memory page faults.
     unsigned long numPageFaults;
 
+#ifdef USE_TLB
+    /// Number of TLB accesses.
     unsigned long tlbAccesses;
+
+    /// Number of TLB misses.
     unsigned long tlbMisses;
+#endif
+
+#ifdef USE_SWAP
+    /// Number of swap ins.
+    unsigned long numSwapIns;
+
+    /// Number of swap outs.
+    unsigned long numSwapOuts;
+#endif
 
 #ifdef DFS_TICKS_FIX
     /// Number of times the tick count gets reset.

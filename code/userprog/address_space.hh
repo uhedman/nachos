@@ -56,16 +56,42 @@ public:
 
     bool LoadPage(unsigned vpn);
 
+#ifdef USE_TLB
+    /// Load the translation entry for a given virtual page number into the TLB.
+    void LoadIntoTLB(unsigned vpn);
+#endif
+
 private:
 
 #ifdef DEMAND_LOADING
+    /// Loads a page from executable file into memory
+    bool LoadFromExecutable(unsigned vpn);
+
+    /// Executable file
     OpenFile *executableFile;
+#endif
+
+#ifdef USE_SWAP
+    /// Swaps in a page from swap file into memory
+    bool SwapIn(unsigned vpn);
+
+    /// Swaps out a page from memory to swap file
+    bool SwapOut(unsigned vpn);
+
+    /// Swap file for this process
+    OpenFile *swapFile;
+
+    /// Indicates if a page is in swap file
+    bool *inSwap;
 #endif
 
     /// Assume linear page table translation for now!
     TranslationEntry *pageTable;
 
-    /// Number of pages in the virtual address space.
+    /// Owner process ID
+    int ownerPid;
+
+    /// Number of pages in the virtual address space
     unsigned numPages;
 
 };
