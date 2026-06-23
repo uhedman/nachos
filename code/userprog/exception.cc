@@ -447,7 +447,7 @@ SyscallHandler(ExceptionType _et)
             if (fid == CONSOLE_INPUT) {
                 char *buffer = new char[size];
                 for (int i = 0; i < size; i++) {
-                    buffer[i] = synchConsole->GetChar();
+                    // buffer[i] = synchConsole->GetChar();
                 }
 
                 WriteBufferToUser(buffer, bufferAddr, size);
@@ -533,7 +533,7 @@ SyscallHandler(ExceptionType _et)
                 ReadBufferFromUser(bufferAddr, buffer, size);
 
                 for (int i = 0; i < size; i++) {
-                    synchConsole->PutChar(buffer[i]);
+                    // synchConsole->PutChar(buffer[i]);
                 }
 
                 bytesWritten = size;

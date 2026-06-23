@@ -247,6 +247,8 @@ AddressSpace::LoadPage(unsigned vpn) {
     bool success = false;
     if (pageTable[vpn].valid) {
         success = true;
+    } else {
+        stats->numRAMMisses++;
     }
 
 #ifdef USE_SWAP
@@ -328,7 +330,7 @@ AddressSpace::LoadFromExecutable(unsigned vpn) {
     pageTable[vpn].physicalPage = freeFrame;
     pageTable[vpn].valid = true;
     pageTable[vpn].dirty = false;
-    pageTable[vpn].use = false;
+    pageTable[vpn].use = true;
     return true;
 }
 #endif
@@ -360,7 +362,7 @@ AddressSpace::SwapIn(unsigned vpn) {
     pageTable[vpn].physicalPage = freeFrame;
     pageTable[vpn].valid = true;
     pageTable[vpn].dirty = false;
-    pageTable[vpn].use = false;
+    pageTable[vpn].use = true;
 
     DEBUG('v', "vpn %u loaded from swap in frame %u\n", vpn, freeFrame);
     return true;
@@ -400,7 +402,6 @@ AddressSpace::SwapOut(unsigned vpn) {
     }
 
     pageTable[vpn].valid = false;
-    pageTable[vpn].dirty = false;
     physicalMemoryMap->Clear(physFrame);
 
     DEBUG('v', "vpn %u swapped out from frame %u\n", vpn, physFrame);

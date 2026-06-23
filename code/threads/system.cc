@@ -39,7 +39,7 @@ SynchDisk *synchDisk;
 
 #ifdef USER_PROGRAM  // Requires either *FILESYS* or *FILESYS_STUB*.
 Machine *machine;  ///< User program memory and registers.
-SynchConsole *synchConsole;
+// SynchConsole *synchConsole;
 Table<Thread *> *processTable;
 #ifdef USE_SWAP
 Coremap *physicalMemoryMap;
@@ -200,7 +200,7 @@ Initialize(int argc, char **argv)
     machine = new Machine(d, numPhysicalPages);  // This must come first.
     SetExceptionHandlers();
 
-    synchConsole = new SynchConsole(nullptr, nullptr);
+    // synchConsole = new SynchConsole(nullptr, nullptr);
     processTable = new Table<Thread *>();
     currentThread->pid = processTable->Add(currentThread);
 #ifdef USE_SWAP
@@ -228,7 +228,7 @@ Cleanup()
 
 #ifdef USER_PROGRAM
     delete machine;
-    delete synchConsole;
+    // delete synchConsole;
     delete processTable;
     processTable = nullptr;
 #endif

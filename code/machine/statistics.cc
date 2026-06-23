@@ -21,6 +21,7 @@ Statistics::Statistics()
     numDiskReads = numDiskWrites = 0;
     numConsoleCharsRead = numConsoleCharsWritten = 0;
     numPageFaults = 0;
+    numRAMMisses = 0;
 #ifdef USE_TLB
     tlbAccesses = 0;
     tlbMisses = 0;
@@ -52,6 +53,7 @@ Statistics::Print()
     printf("Console I/O: reads %lu, writes %lu\n",
            numConsoleCharsRead, numConsoleCharsWritten);
     printf("Paging: faults %lu\n", numPageFaults);
+    printf("RAM: misses %lu\n", numRAMMisses);
 #ifdef USE_TLB
     printf("TLB: accesses %lu, hits %lu (%.2f%%), misses %lu (%.2f%%)\n",
            tlbAccesses, tlbAccesses - tlbMisses,

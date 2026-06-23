@@ -47,6 +47,9 @@ public:
     /// Number of virtual memory page faults.
     unsigned long numPageFaults;
 
+    /// Number of actual RAM misses (pages not in memory).
+    unsigned long numRAMMisses;
+
 #ifdef USE_TLB
     /// Number of TLB accesses.
     unsigned long tlbAccesses;

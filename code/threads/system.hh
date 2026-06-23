@@ -38,7 +38,7 @@ extern Timer *timer;                 ///< The hardware alarm clock.
 #include "machine/synch_console.hh"
 #include "lib/table.hh"
 extern Machine *machine;  // User program memory and registers.
-extern SynchConsole *synchConsole;
+// extern SynchConsole *synchConsole;
 extern Table<Thread *> *processTable;
 #ifdef USE_SWAP
 #include "lib/coremap.hh"
