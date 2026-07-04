@@ -175,6 +175,8 @@ MMU::RetrievePageEntry(unsigned vpn, TranslationEntry **entry) const
 {
     ASSERT(entry != nullptr);
 
+    DEBUG('V', "%d\n", vpn);
+
     if (tlb == nullptr) {
         // Use a page table; `vpn` is an index in the table.
 

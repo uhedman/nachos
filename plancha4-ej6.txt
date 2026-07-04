@@ -1,0 +1,98 @@
+CLOCK
+../vmem/nachos -x matmult
+No threads ready or runnable, and no pending interrupts.
+Assuming the program completed.
+Machine halting!
+
+Ticks: total 644152, idle 0, system 10, user 644142
+Disk I/O: reads 0, writes 0
+Console I/O: reads 0, writes 0
+Paging: faults 62630
+RAM: misses 79
+TLB: accesses 809694, hits 747064 (92.26%), misses 62630 (7.74%)
+Swap: ins 32, outs 47
+
+
+../vmem/nachos -x sort
+No threads ready or runnable, and no pending interrupts.
+Assuming the program completed.
+Machine halting!
+
+Ticks: total 37251794, idle 0, system 10, user 37251784
+Disk I/O: reads 0, writes 0
+Console I/O: reads 0, writes 0
+Paging: faults 2640574
+RAM: misses 4466
+TLB: accesses 47760284, hits 45119710 (94.47%), misses 2640574 (5.53%)
+Swap: ins 4413, outs 4434
+
+
+FIFO
+../vmem/nachos -x matmult
+No threads ready or runnable, and no pending interrupts.
+Assuming the program completed.
+Machine halting!
+
+Ticks: total 644155, idle 0, system 10, user 644145
+Disk I/O: reads 0, writes 0
+Console I/O: reads 0, writes 0
+Paging: faults 62633
+RAM: misses 107
+TLB: accesses 809698, hits 747065 (92.26%), misses 62633 (7.74%)
+Swap: ins 53, outs 75
+
+
+../vmem/nachos -x sort
+No threads ready or runnable, and no pending interrupts.
+Assuming the program completed.
+Machine halting!
+
+Ticks: total 37251999, idle 0, system 10, user 37251989
+Disk I/O: reads 0, writes 0
+Console I/O: reads 0, writes 0
+Paging: faults 2640779
+RAM: misses 5114
+TLB: accesses 47760706, hits 45119927 (94.47%), misses 2640779 (5.53%)
+Swap: ins 4614, outs 5082
+
+OPT/MIN
+Matmult
+Hits:     809637
+Misses:   57
+Hit rate: 99.99%
+Miss rate:0.01%
+
+Sort
+Hits:     47759815
+Misses:   469
+Hit rate: 100.00%
+Miss rate:0.00%
+
+---
+### Tabla Comparativa de Rendimiento en RAM (32 Marcos)
+
+| Algoritmo | Programa | Total Accesos (RAM) | Hits (RAM) | Misses (RAM) | Hit Rate | Miss Rate |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **OPT/MIN** | matmult | 809,694 | 809,637 | **57** | 99.993% | 0.007% |
+| **CLOCK** | matmult | 809,694 | 809,615 | **79** | 99.990% | 0.010% |
+| **FIFO** | matmult | 809,698 | 809,591 | **107** | 99.986% | 0.014% |
+| **OPT/MIN** | sort | 47,760,284 | 47,759,815 | **469** | 99.999% | 0.001% |
+| **CLOCK** | sort | 47,760,284 | 47,755,818 | **4,466** | 99.990% | 0.009% |
+| **FIFO** | sort | 47,760,706 | 47,755,592 | **5,114** | 99.989% | 0.011% |
+
+---
+### Analisis de los Resultados
+
+1. La jerarquia de los algoritmos se cumple a la perfeccion:
+   - OPT (el algoritmo ideal, imposible de implementar en la realidad porque requiere ver el futuro) siempre es el mejor, logrando la minima cantidad posible de fallos (57 y 469).
+   - CLOCK simula el algoritmo LRU (Menos Usado Recientemente) mediante un bit de referencia. Tiene un rendimiento excelente (79 y 4466) y se acerca bastante al optimo.
+   - FIFO es el peor (107 y 5114). Saca la pagina que entro primero a la memoria sin importar si se esta usando activamente o no.
+
+2. La debilidad de FIFO queda expuesta (Desalojo de paginas limpias):
+   Si observamos la prueba de sort, notaremos por que a FIFO le va peor:
+   - CLOCK: 4,466 fallos totales - 4,413 Swap Ins = 53 cargas desde el ejecutable. Esto es basicamente el tamano del programa (los fallos obligatorios).
+   - FIFO: 5,114 fallos totales - 4,614 Swap Ins = 500 cargas desde el ejecutable.
+   FIFO desaloja las paginas de codigo de manera ciega (estas son read-only y no van a SWAP), forzando al sistema a re-cargar esas paginas desde el ejecutable constantemente en lugar de traerlas del Swap. CLOCK en cambio mantuvo el codigo ejecutado activamente gracias al bit de referencia.
+
+3. La TLB engana si no se analiza bien:
+   Los fallos reportados originalmente como "Paging: faults" (62,630 para matmult) eran en realidad TLB misses generados por software. Como la TLB es de hardware y es muy pequena (tipicamente 4 entradas), sufre muchos fallos, pero la pagina requerida casi siempre ya estaba en la RAM. Gracias a la metrica numRAMMisses vimos que los verdaderos accesos a disco por page-faults fueron tan solo 79.

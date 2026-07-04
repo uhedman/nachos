@@ -81,6 +81,8 @@ private:
     /// Entries storage.
     CoremapEntry *map;
 
+    /// Hand position for the clock page replacement algorithm.
+    unsigned clockHand;
 };
 
 

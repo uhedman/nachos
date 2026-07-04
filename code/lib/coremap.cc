@@ -16,6 +16,7 @@ Coremap::Coremap(unsigned nitems)
     for (unsigned i = 0; i < numBits; i++) {
         Clear(i);
     }
+    clockHand = 0;
 }
 
 /// De-allocate a coremap.
@@ -126,12 +127,53 @@ Coremap::WriteBack(OpenFile *file) const
     file->WriteAt((char *) map, numBits * sizeof (CoremapEntry), 0);
 }
 
-/// Select a physical frame to be replaced using a random selection policy.
+/// Select a physical frame to be replaced.
+#ifdef PRPOLICY_FIFO
+unsigned
+Coremap::PickVictim()
+{
+    unsigned frame = clockHand;
+    clockHand = (clockHand + 1) % numBits;
+    return frame;
+}
+#elif defined(PRPOLICY_CLOCK)
+unsigned
+Coremap::PickVictim()
+{
+    while (true) {
+        for (unsigned i = 0; i < numBits; i++) {
+            unsigned frame = clockHand;
+            clockHand = (clockHand + 1) % numBits;
+
+            TranslationEntry *page =
+                &map[frame].space->GetPageTable()[map[frame].virtualPage];
+
+            if (!page->use && !page->dirty) {
+                return frame;
+            }
+        }
+
+        for (unsigned i = 0; i < numBits; i++) {
+            unsigned frame = clockHand;
+            clockHand = (clockHand + 1) % numBits;
+
+            TranslationEntry *page =
+                &map[frame].space->GetPageTable()[map[frame].virtualPage];
+
+            if (!page->use) {
+                return frame;
+            }
+            page->use = false;
+        }
+    }
+}
+#else
 unsigned
 Coremap::PickVictim()
 {
     return SystemDep::Random() % numBits;
 }
+#endif
 
 /// Get the AddressSpace associated with a physical frame.
 AddressSpace *
