@@ -107,24 +107,37 @@ AddressSpace::AddressSpace(OpenFile *executable_file)
         DEBUG('a', "Initializing code segment, at 0x%X, size %u\n",
             virtualAddr, codeSize);
 
-        for (uint32_t i = 0; i < codeSize; i++) {
+        uint32_t i = 0;
+        while (i < codeSize) {
             uint32_t vAddr = virtualAddr + i;
             uint32_t vPage = vAddr / PAGE_SIZE;
             uint32_t offset = vAddr % PAGE_SIZE;
+            uint32_t toRead = PAGE_SIZE - offset;
+            if (toRead > codeSize - i) {
+                toRead = codeSize - i;
+            }
             uint32_t pAddr = (pageTable[vPage].physicalPage * PAGE_SIZE) + offset;
-            exe.ReadCodeBlock(&mainMemory[pAddr], 1, i);
+            exe.ReadCodeBlock(&mainMemory[pAddr], toRead, i);
+            i += toRead;
         }
     }
     if (initDataSize > 0) {
         uint32_t virtualAddr = exe.GetInitDataAddr();
         DEBUG('a', "Initializing data segment, at 0x%X, size %u\n",
             virtualAddr, initDataSize);
-        for (uint32_t i = 0; i < initDataSize; i++) {
+            
+        uint32_t i = 0;
+        while (i < initDataSize) {
             uint32_t vAddr = virtualAddr + i;
             uint32_t vPage = vAddr / PAGE_SIZE;
             uint32_t offset = vAddr % PAGE_SIZE;
+            uint32_t toRead = PAGE_SIZE - offset;
+            if (toRead > initDataSize - i) {
+                toRead = initDataSize - i;
+            }
             uint32_t pAddr = (pageTable[vPage].physicalPage * PAGE_SIZE) + offset;
-            exe.ReadDataBlock(&mainMemory[pAddr], 1, i);
+            exe.ReadDataBlock(&mainMemory[pAddr], toRead, i);
+            i += toRead;
         }
     }
 #endif

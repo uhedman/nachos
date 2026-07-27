@@ -37,6 +37,7 @@
 
 
 #include "open_file.hh"
+class Lock;
 
 
 #ifdef FILESYS_STUB  // Temporarily implement file system calls as calls to
@@ -94,6 +95,8 @@ public:
 
 #include "directory_entry.hh"
 #include "machine/disk.hh"
+#include "lib/table.hh"
+#include "open_file_entry.hh"
 
 
 /// Initial file sizes for the bitmap and directory; until the file system
@@ -103,6 +106,7 @@ static const unsigned FREE_MAP_FILE_SIZE = NUM_SECTORS / BITS_IN_BYTE;
 static const unsigned NUM_DIR_ENTRIES = 10;
 static const unsigned DIRECTORY_FILE_SIZE
   = sizeof (DirectoryEntry) * NUM_DIR_ENTRIES;
+static const unsigned OPEN_FILE_TABLE_SIZE = 20;
 
 
 class FileSystem {
@@ -126,6 +130,9 @@ public:
     /// Delete a file (UNIX `unlink`).
     bool Remove(const char *name);
 
+    /// Close a file and delete it if it was marked for deletion.
+    void CloseFile(OpenFileEntry *entry);
+
     /// List all the files in the file system.
     void List();
 
@@ -140,6 +147,8 @@ private:
                             ///< file.
     OpenFile *directoryFile;  ///< “Root” directory -- list of file names,
                               ///< represented as a file.
+    Table<OpenFileEntry*> *openFileTable;
+    Lock *fsLock;
 };
 
 #endif

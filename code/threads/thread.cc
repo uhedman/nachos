@@ -257,6 +257,16 @@ Thread::Finish(int exitStatus)
 
     DEBUG('t', "Finishing thread \"%s\" with exit status %d\n", GetName(), exitStatus);
 
+#ifdef USER_PROGRAM
+    if (processTable != nullptr && pid != -1) {
+        processTable->Remove(pid);
+        pid = -1;
+        if (processTable->IsEmpty()) {
+            interrupt->Halt();
+        }
+    }
+#endif
+
     threadToBeDestroyed = currentThread;
     Sleep();  // Invokes `SWITCH`.
     // Not reached.

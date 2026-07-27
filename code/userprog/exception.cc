@@ -307,7 +307,7 @@ SyscallHandler(ExceptionType _et)
             }
 
             DEBUG('e', "`Create` requested for file `%s`.\n", filename);
-            if (!fileSystem->Create(filename, 0)) {
+            if (!fileSystem->Create(filename, 1024)) {
                 DEBUG('e', "Error: could not create file `%s`.\n", filename);
                 machine->WriteRegister(2, -1);
                 break;

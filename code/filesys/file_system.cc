@@ -43,6 +43,7 @@
 
 
 #include "file_system.hh"
+#include "threads/lock.hh"
 #include "directory.hh"
 #include "file_header.hh"
 #include "lib/bitmap.hh"
@@ -69,6 +70,9 @@ static const unsigned DIRECTORY_SECTOR = 1;
 FileSystem::FileSystem(bool format)
 {
     DEBUG('f', "Initializing the file system.\n");
+    openFileTable = new Table<OpenFileEntry*>();
+    fsLock = new Lock("FileSystem Lock");
+
     if (format) {
         Bitmap     *freeMap = new Bitmap(NUM_SECTORS);
         Directory  *dir     = new Directory(NUM_DIR_ENTRIES);
@@ -101,7 +105,7 @@ FileSystem::FileSystem(bool format)
         // The file system operations assume these two files are left open
         // while Nachos is running.
 
-        freeMapFile   = new OpenFile(FREE_MAP_SECTOR);
+        freeMapFile = new OpenFile(FREE_MAP_SECTOR);
         directoryFile = new OpenFile(DIRECTORY_SECTOR);
 
         // Once we have the files “open”, we can write the initial version of
@@ -127,7 +131,7 @@ FileSystem::FileSystem(bool format)
         // If we are not formatting the disk, just open the files
         // representing the bitmap and directory; these are left open while
         // Nachos is running.
-        freeMapFile   = new OpenFile(FREE_MAP_SECTOR);
+        freeMapFile = new OpenFile(FREE_MAP_SECTOR);
         directoryFile = new OpenFile(DIRECTORY_SECTOR);
     }
 }
@@ -136,6 +140,8 @@ FileSystem::~FileSystem()
 {
     delete freeMapFile;
     delete directoryFile;
+    delete openFileTable;
+    delete fsLock;
 }
 
 /// Create a file in the Nachos file system (similar to UNIX `create`).
@@ -171,6 +177,8 @@ FileSystem::Create(const char *name, unsigned initialSize)
 
     DEBUG('f', "Creating file %s, size %u\n", name, initialSize);
 
+    fsLock->Acquire();
+
     Directory *dir = new Directory(NUM_DIR_ENTRIES);
     dir->FetchFrom(directoryFile);
 
@@ -202,6 +210,7 @@ FileSystem::Create(const char *name, unsigned initialSize)
         delete freeMap;
     }
     delete dir;
+    fsLock->Release();
     return success;
 }
 
@@ -220,13 +229,37 @@ FileSystem::Open(const char *name)
     Directory *dir = new Directory(NUM_DIR_ENTRIES);
     OpenFile  *openFile = nullptr;
 
+    fsLock->Acquire();
+
     DEBUG('f', "Opening file %s\n", name);
     dir->FetchFrom(directoryFile);
     int sector = dir->Find(name);
     if (sector >= 0) {
-        openFile = new OpenFile(sector);  // `name` was found in directory.
+        OpenFileEntry *entry = nullptr;
+        
+        for (unsigned i = 0; i < OPEN_FILE_TABLE_SIZE; i++) {
+            if (openFileTable->HasKey(i)) {
+                OpenFileEntry *e = openFileTable->Get(i);
+                if (e->GetSector() == sector) {
+                    entry = e;
+                    break;
+                }
+            }
+        }
+
+        if (entry == nullptr) {
+            entry = new OpenFileEntry(sector);
+            openFileTable->Add(entry);
+        }
+
+        entry->AcquireMetaLock();
+        entry->AddOpener();
+        entry->ReleaseMetaLock();
+
+        openFile = new OpenFile(sector, entry);  // `name` was found in directory.
     }
     delete dir;
+    fsLock->Release();
     return openFile;  // Return null if not found.
 }
 
@@ -247,29 +280,102 @@ FileSystem::Remove(const char *name)
 {
     ASSERT(name != nullptr);
 
+    fsLock->Acquire();
+
     Directory *dir = new Directory(NUM_DIR_ENTRIES);
     dir->FetchFrom(directoryFile);
     int sector = dir->Find(name);
     if (sector == -1) {
        delete dir;
+       fsLock->Release();
        return false;  // file not found
     }
-    FileHeader *fileH = new FileHeader;
-    fileH->FetchFrom(sector);
 
-    Bitmap *freeMap = new Bitmap(NUM_SECTORS);
-    freeMap->FetchFrom(freeMapFile);
+    bool isOpen = false;
+    for (unsigned i = 0; i < OPEN_FILE_TABLE_SIZE; i++) {
+        if (openFileTable->HasKey(i)) {
+            OpenFileEntry *e = openFileTable->Get(i);
+            if (e->GetSector() == sector) {
+                e->AcquireMetaLock();
+                e->MarkForRemoval();
+                e->ReleaseMetaLock();
+                isOpen = true;
+                break;
+            }
+        }
+    }
 
-    fileH->Deallocate(freeMap);  // Remove data blocks.
-    freeMap->Clear(sector);      // Remove header block.
+    // Borramos del directorio para impedir nuevas aberturas
     dir->Remove(name);
-
-    freeMap->WriteBack(freeMapFile);  // Flush to disk.
     dir->WriteBack(directoryFile);    // Flush to disk.
-    delete fileH;
+
+    // Si nadie lo tiene abierto, liberamos los bloques físicos ahora.
+    // Si alguien lo tiene abierto, lo liberará el último en cerrarlo.
+    if (!isOpen) {
+        FileHeader *fileH = new FileHeader;
+        fileH->FetchFrom(sector);
+
+        Bitmap *freeMap = new Bitmap(NUM_SECTORS);
+        freeMap->FetchFrom(freeMapFile);
+
+        fileH->Deallocate(freeMap);  // Remove data blocks.
+        freeMap->Clear(sector);      // Remove header block.
+        freeMap->WriteBack(freeMapFile);  // Flush to disk.
+        
+        delete fileH;
+        delete freeMap;
+    }
+    
     delete dir;
-    delete freeMap;
+    fsLock->Release();
     return true;
+}
+
+void
+FileSystem::CloseFile(OpenFileEntry *entry)
+{
+    ASSERT(entry != nullptr);
+    
+    entry->AcquireMetaLock();
+    entry->RemoveOpener();
+    
+    bool shouldDelete = (entry->GetOpenerCount() <= 0);
+    bool pending = entry->IsPendingRemoval();
+    int sector = entry->GetSector();
+    
+    if (shouldDelete) {
+        fsLock->Acquire();
+        for (unsigned i = 0; i < OPEN_FILE_TABLE_SIZE; i++) {
+            if (openFileTable->HasKey(i) && openFileTable->Get(i) == entry) {
+                openFileTable->Remove(i);
+                break;
+            }
+        }
+        fsLock->Release();
+    }
+    
+    entry->ReleaseMetaLock();
+
+    if (shouldDelete) {
+        if (pending) {
+            FileHeader *fileH = new FileHeader;
+            fileH->FetchFrom(sector);
+
+            fsLock->Acquire();
+            Bitmap *freeMap = new Bitmap(NUM_SECTORS);
+            freeMap->FetchFrom(freeMapFile);
+
+            fileH->Deallocate(freeMap);  // Remove data blocks.
+            freeMap->Clear(sector);      // Remove header block.
+            freeMap->WriteBack(freeMapFile);  // Flush to disk.
+            fsLock->Release();
+
+            delete fileH;
+            delete freeMap;
+        }
+        
+        delete entry;
+    }
 }
 
 /// List all the files in the file system directory.

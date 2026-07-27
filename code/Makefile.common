@@ -38,6 +38,7 @@ THREAD_HDR = threads/condition.hh             \
              threads/channel.hh               \
              threads/copyright.h              \
              threads/lock.hh                  \
+             threads/rwlock.hh                \
              threads/scheduler.hh             \
              threads/semaphore.hh             \
              threads/synch_list.hh            \
@@ -64,6 +65,7 @@ THREAD_SRC = threads/main.cc                  \
              threads/channel.cc               \
              threads/condition.cc             \
              threads/lock.cc                  \
+             threads/rwlock.cc                \
              threads/scheduler.cc             \
              threads/semaphore.cc             \
              threads/sys_info.cc              \
@@ -130,6 +132,7 @@ FILESYS_HDR = filesys/directory.hh       \
               filesys/file_header.hh     \
               filesys/file_system.hh     \
               filesys/open_file.hh       \
+              filesys/open_file_entry.hh \
               filesys/raw_directory.hh   \
               filesys/raw_file_header.hh \
               filesys/synch_disk.hh      \
@@ -139,6 +142,7 @@ FILESYS_SRC = filesys/directory.cc   \
               filesys/file_system.cc \
               filesys/fs_test.cc     \
               filesys/open_file.cc   \
+              filesys/open_file_entry.cc \
               filesys/synch_disk.cc  \
               machine/disk.cc
 
