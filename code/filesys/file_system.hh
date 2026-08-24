@@ -59,7 +59,7 @@ public:
 
     ~FileSystem() {}
 
-    bool Create(const char *name, unsigned initialSize)
+    bool Create(const char *name)
     {
         ASSERT(name != nullptr);
 
@@ -122,7 +122,7 @@ public:
     ~FileSystem();
 
     /// Create a file (UNIX `creat`).
-    bool Create(const char *name, unsigned initialSize);
+    bool Create(const char *name);
 
     /// Open a file (UNIX `open`).
     OpenFile *Open(const char *name);
@@ -139,6 +139,9 @@ public:
     /// Check the filesystem.
     bool Check();
 
+    /// Extend a file.
+    bool ExtendFile(int sector, FileHeader *hdr, unsigned newSize);
+
     /// List all the files and their contents.
     void Print();
 
@@ -148,7 +151,9 @@ private:
     OpenFile *directoryFile;  ///< “Root” directory -- list of file names,
                               ///< represented as a file.
     Table<OpenFileEntry*> *openFileTable;
-    Lock *fsLock;
+    Lock *directoryLock;      ///< Serializes directory transactions (Create, Remove, Open).
+    Lock *freeMapLock;        ///< Protects freeMap reads/writes.
+    Lock *openFileTableLock;  ///< Protects openFileTable inserts/removals.
 };
 
 #endif

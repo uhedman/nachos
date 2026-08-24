@@ -57,6 +57,17 @@ void
 Directory::FetchFrom(OpenFile *file)
 {
     ASSERT(file != nullptr);
+    unsigned fileSize = file->Length();
+    if (fileSize > 0) {
+        unsigned newSize = fileSize / sizeof (DirectoryEntry);
+        if (newSize != raw.tableSize) {
+            delete [] raw.table;
+            raw.table = new DirectoryEntry [newSize];
+            raw.tableSize = newSize;
+        }
+        DEBUG('f', "Fetched directory from disk: table size %u entries (%u bytes).\n",
+              raw.tableSize, fileSize);
+    }
     file->ReadAt((char *) raw.table,
                  raw.tableSize * sizeof (DirectoryEntry), 0);
 }
@@ -130,7 +141,32 @@ Directory::Add(const char *name, int newSector)
             return true;
         }
     }
-    return false;  // no space.  Fix when we have extensible files.
+    // Expand directory table
+    unsigned oldSize = raw.tableSize;
+    unsigned newSize = oldSize + 10;
+    
+    DEBUG('f', "Expanding directory table from %u to %u entries.\n", oldSize, newSize);
+
+    DirectoryEntry *newTable = new DirectoryEntry[newSize];
+    
+    for (unsigned i = 0; i < oldSize; i++) {
+        newTable[i] = raw.table[i];
+    }
+    
+    for (unsigned i = oldSize; i < newSize; i++) {
+        newTable[i].inUse = false;
+    }
+    
+    delete [] raw.table;
+    raw.table = newTable;
+    raw.tableSize = newSize;
+    
+    // Add the new entry in the first newly allocated slot
+    raw.table[oldSize].inUse = true;
+    strncpy(raw.table[oldSize].name, name, FILE_NAME_MAX_LEN);
+    raw.table[oldSize].sector = newSector;
+    
+    return true;
 }
 
 /// Remove a file name from the directory.   Return true if successful;

@@ -23,21 +23,20 @@
 ///
 /// * `sector` is the location on disk of the file header for this file.
 /// * `entry` is the shared data structure for this file.
-OpenFile::OpenFile(int sector, OpenFileEntry *entry)
+OpenFile::OpenFile(OpenFileEntry *entry)
 {
-    hdr = new FileHeader;
-    hdr->FetchFrom(sector);
-    seekPosition = 0;
+    ASSERT(entry != nullptr);
+
     sharedData = entry;
+    hdr = new FileHeader;
+    hdr->FetchFrom(sharedData->GetSector());
+    seekPosition = 0;
 }
 
-/// Close a Nachos file, de-allocating any in-memory data structures.
 OpenFile::~OpenFile()
 {
     delete hdr;
-    if (sharedData != nullptr) {
-        fileSystem->CloseFile(sharedData);
-    }
+    fileSystem->CloseFile(sharedData);
 }
 
 /// Change the current location within the open file -- the point at which
@@ -115,18 +114,14 @@ OpenFile::ReadAt(char *into, unsigned numBytes, unsigned position)
     ASSERT(into != nullptr);
     ASSERT(numBytes > 0);
 
-    if (sharedData != nullptr) {
-        sharedData->AcquireRead();
-    }
+    sharedData->AcquireRead();
 
     unsigned fileLength = hdr->FileLength();
     unsigned firstSector, lastSector, numSectors;
     char *buf;
 
     if (position >= fileLength) {
-        if (sharedData != nullptr) {
-            sharedData->ReleaseRead();
-        }
+        sharedData->ReleaseRead();
         return 0;  // Check request.
     }
     if (position + numBytes > fileLength) {
@@ -150,9 +145,7 @@ OpenFile::ReadAt(char *into, unsigned numBytes, unsigned position)
     memcpy(into, &buf[position - firstSector * SECTOR_SIZE], numBytes);
     delete [] buf;
     
-    if (sharedData != nullptr) {
-        sharedData->ReleaseRead();
-    }
+    sharedData->ReleaseRead();
     return numBytes;
 }
 
@@ -162,19 +155,28 @@ OpenFile::WriteAt(const char *from, unsigned numBytes, unsigned position)
     ASSERT(from != nullptr);
     ASSERT(numBytes > 0);
 
-    if (sharedData != nullptr) {
-        sharedData->AcquireWrite();
-    }
-
     unsigned fileLength = hdr->FileLength();
     unsigned firstSector, lastSector, numSectors;
     bool firstAligned, lastAligned;
     char *buf;
 
+    // Check if extension is needed before taking the file lock
+    if (position + numBytes > fileLength) {
+        unsigned newSize = position + numBytes;
+        DEBUG('f', "WriteAt: extending file from %u to %u bytes (offset %u, %u bytes).\n",
+              fileLength, newSize, position, numBytes);
+        fileSystem->ExtendFile(sharedData->GetSector(), hdr, newSize);
+    }
+
+    sharedData->AcquireWrite();
+
+    // Re-fetch the header to ensure it's up to date in case another thread extended it
+    // while we were checking or waiting for the lock.
+    hdr->FetchFrom(sharedData->GetSector());
+    fileLength = hdr->FileLength();
+
     if (position >= fileLength) {
-        if (sharedData != nullptr) {
-            sharedData->ReleaseWrite();
-        }
+        sharedData->ReleaseWrite();
         return 0;  // Check request.
     }
     if (position + numBytes > fileLength) {
@@ -211,9 +213,7 @@ OpenFile::WriteAt(const char *from, unsigned numBytes, unsigned position)
     }
     delete [] buf;
     
-    if (sharedData != nullptr) {
-        sharedData->ReleaseWrite();
-    }
+    sharedData->ReleaseWrite();
     return numBytes;
 }
 

@@ -145,7 +145,7 @@ AddressSpace::AddressSpace(OpenFile *executable_file)
 #ifdef USE_SWAP
     char swapFileName[32];
     snprintf(swapFileName, sizeof(swapFileName), "SWAP.%d", ownerPid);
-    fileSystem->Create(swapFileName, numPages * PAGE_SIZE);
+    fileSystem->Create(swapFileName);
     swapFile = fileSystem->Open(swapFileName);
 #endif
 }

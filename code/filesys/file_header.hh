@@ -38,6 +38,9 @@ public:
     /// file data.
     bool Allocate(Bitmap *bitMap, unsigned fileSize);
 
+    /// Extend a file header, allocating new blocks if needed.
+    bool Extend(Bitmap *bitMap, unsigned fileSize);
+
     /// De-allocate this file's data blocks.
     void Deallocate(Bitmap *bitMap);
 

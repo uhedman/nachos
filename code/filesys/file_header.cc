@@ -30,93 +30,183 @@
 #include <stdio.h>
 
 
-/// Initialize a fresh file header for a newly created file.  Allocate data
-/// blocks for the file out of the map of free disk blocks.  Return false if
-/// there are not enough free blocks to accomodate the new file.
+/// Initialize a fresh file header for a newly created file.
 ///
 /// * `freeMap` is the bit map of free disk sectors.
-/// * `fileSize` is the size of the file in bytes.
+/// * `initialFileSize` is the initial size of the file in bytes.
 bool
-FileHeader::Allocate(Bitmap *freeMap, unsigned fileSize)
+FileHeader::Allocate(Bitmap *freeMap, unsigned initialFileSize)
 {
 	ASSERT(freeMap != nullptr);
 
+	DEBUG('f', "Allocating file of size %u\n", initialFileSize);
+
+	if (initialFileSize > MAX_FILE_SIZE) {
+		return false;
+	}
+
+	raw.numBytes = 0;
+	raw.numSectors = 0;
+
+	if (initialFileSize == 0) {
+		return true;
+	}
+
+	return Extend(freeMap, initialFileSize);
+}
+
+/// Extend a file header to a new size.
+///
+/// * `freeMap` is the bit map of free disk sectors.
+/// * `fileSize` is the new size of the file in bytes.
+bool
+FileHeader::Extend(Bitmap *freeMap, unsigned fileSize)
+{
+	ASSERT(freeMap != nullptr);
+
+	unsigned numBytes = raw.numBytes;
+	unsigned numSectors = raw.numSectors;
+
+	DEBUG('f', "Extending file from %u to size %u bytes\n", numBytes, fileSize);
+
+	if (fileSize <= numBytes) {
+		DEBUG('f', "New size %u must be greater than current size %u\n", fileSize, numBytes);
+		return false;
+	}
+
 	if (fileSize > MAX_FILE_SIZE) {
+		DEBUG('f', "New size %u is too big, max is %u\n", fileSize, MAX_FILE_SIZE);
 		return false;
 	}
 
-	DEBUG('f', "Allocating file of size %u\n", fileSize);
+	unsigned newNumSectors = DivRoundUp(fileSize, SECTOR_SIZE);
 
-	raw.numBytes = fileSize;
-	raw.numSectors = DivRoundUp(fileSize, SECTOR_SIZE);
-
-	unsigned totalSectorsNeeded = raw.numSectors;
-	if (raw.numSectors > NUM_DIRECT) {
-		totalSectorsNeeded++; // One sector for the table pointed to by single indirect
-	}
-	if (raw.numSectors > NUM_DIRECT + POINTERS_PER_SECTOR) {
-		totalSectorsNeeded++; // One sector for the table pointed to by double indirect
-		unsigned remaining = raw.numSectors - NUM_DIRECT - POINTERS_PER_SECTOR;
-		// One sector for each table pointed to by each single indirect inside double
-		totalSectorsNeeded += DivRoundUp(remaining, POINTERS_PER_SECTOR);
+	if (newNumSectors <= numSectors) {
+		DEBUG('f', "Updating file size from %u to %u bytes\n", numBytes, fileSize);
+		raw.numBytes = fileSize;
+		return true;
 	}
 
-	if (freeMap->CountClear() < totalSectorsNeeded) {
-		return false;
+	unsigned dataSectorsToAdd = newNumSectors - numSectors;
+	unsigned metaSectorsToAdd = 0;
+
+	// Calculate if we need a new single indirect block
+	if (numSectors <= NUM_DIRECT && newNumSectors > NUM_DIRECT) {
+		metaSectorsToAdd++;
 	}
 
-	// Allocate direct sectors
-	unsigned directSectors = raw.numSectors < NUM_DIRECT ? raw.numSectors : NUM_DIRECT;
-	for (unsigned i = 0; i < directSectors; i++) {
-		raw.dataSectors[i] = freeMap->Find();
-	}
-
-	// Allocate single indirect sectors
-	if (raw.numSectors > NUM_DIRECT) {
-		raw.singleIndirect = freeMap->Find();
-		unsigned *singleIndirectBlock = new unsigned[POINTERS_PER_SECTOR];
-		unsigned indirectSectors = raw.numSectors - NUM_DIRECT;
-
-		if (indirectSectors > POINTERS_PER_SECTOR) {
-			indirectSectors = POINTERS_PER_SECTOR;
+	// Calculate if we need a new double indirect block or inner blocks
+	if (newNumSectors > NUM_DIRECT + POINTERS_PER_SECTOR) {
+		if (numSectors <= NUM_DIRECT + POINTERS_PER_SECTOR) {
+			metaSectorsToAdd++; // The main double indirect table
 		}
-		for (unsigned i = 0; i < indirectSectors; i++) {
-			singleIndirectBlock[i] = freeMap->Find();
+		
+		unsigned currentInnerBlocks = 0;
+		if (numSectors > NUM_DIRECT + POINTERS_PER_SECTOR) {
+			unsigned currentRemaining = numSectors - NUM_DIRECT - POINTERS_PER_SECTOR;
+			currentInnerBlocks = DivRoundUp(currentRemaining, POINTERS_PER_SECTOR);
+		}
+		
+		unsigned newRemaining = newNumSectors - NUM_DIRECT - POINTERS_PER_SECTOR;
+		unsigned newInnerBlocks = DivRoundUp(newRemaining, POINTERS_PER_SECTOR);
+		
+		if (newInnerBlocks > currentInnerBlocks) {
+			metaSectorsToAdd += (newInnerBlocks - currentInnerBlocks);
+		}
+	}
+
+	if (freeMap->CountClear() < dataSectorsToAdd + metaSectorsToAdd) {
+		DEBUG('f', "Not enough space in the disk to extend the file.\n");
+		return false;
+	}
+
+	DEBUG('f', "Extending file from %u to %u bytes (adding %u data sectors, %u meta sectors)\n", 
+	      numBytes, fileSize, dataSectorsToAdd, metaSectorsToAdd);
+
+	unsigned currentNumSectors = numSectors;
+
+	// Direct sectors
+	if (currentNumSectors < NUM_DIRECT && currentNumSectors < newNumSectors) {
+		unsigned limit = (newNumSectors < NUM_DIRECT) ? newNumSectors : NUM_DIRECT;
+		while (currentNumSectors < limit) {
+			raw.dataSectors[currentNumSectors] = freeMap->Find();
+			currentNumSectors++;
+		}
+	}
+
+	// Single indirect sectors
+	if (currentNumSectors >= NUM_DIRECT && currentNumSectors < NUM_DIRECT + POINTERS_PER_SECTOR && currentNumSectors < newNumSectors) {
+		unsigned limit = (newNumSectors < NUM_DIRECT + POINTERS_PER_SECTOR) ? newNumSectors : NUM_DIRECT + POINTERS_PER_SECTOR;
+		unsigned singleIndirectBlock[POINTERS_PER_SECTOR];
+		unsigned indirectIndex = currentNumSectors - NUM_DIRECT;
+
+		DEBUG('f', "Extending single indirect sectors from %u to %u\n", currentNumSectors, limit);
+
+		if (indirectIndex == 0) {
+			raw.singleIndirect = freeMap->Find();
+			for (unsigned k = 0; k < POINTERS_PER_SECTOR; k++) singleIndirectBlock[k] = 0;
+		} else {
+			synchDisk->ReadSector(raw.singleIndirect, (char *)singleIndirectBlock);
+		}
+
+		while (currentNumSectors < limit) {
+			singleIndirectBlock[indirectIndex] = freeMap->Find();
+			indirectIndex++;
+			currentNumSectors++;
 		}
 
 		synchDisk->WriteSector(raw.singleIndirect, (char *)singleIndirectBlock);
-		delete[] singleIndirectBlock;
 	}
 
-	// Allocate double indirect sectors
-	if (raw.numSectors > NUM_DIRECT + POINTERS_PER_SECTOR) {
-		raw.doubleIndirect = freeMap->Find();
-		unsigned *doubleIndirectBlock = new unsigned[POINTERS_PER_SECTOR];
-		
-		unsigned remaining = raw.numSectors - NUM_DIRECT - POINTERS_PER_SECTOR;
-		unsigned innerBlocks = DivRoundUp(remaining, POINTERS_PER_SECTOR);
+	// Double indirect sectors
+	if (currentNumSectors >= NUM_DIRECT + POINTERS_PER_SECTOR && currentNumSectors < newNumSectors) {
+		unsigned doubleIndirectBlock[POINTERS_PER_SECTOR];
+		unsigned doubleIndex = currentNumSectors - NUM_DIRECT - POINTERS_PER_SECTOR;
 
-		// Allocate each inner single indirect block
-		for (unsigned i = 0; i < innerBlocks; i++) {
-			doubleIndirectBlock[i] = freeMap->Find();
-			unsigned *innerIndirectBlock = new unsigned[POINTERS_PER_SECTOR];
-			
-			unsigned dataInThisBlock = remaining - (i * POINTERS_PER_SECTOR);
-			if (dataInThisBlock > POINTERS_PER_SECTOR) {
-				dataInThisBlock = POINTERS_PER_SECTOR;
-			}
-			
-			for (unsigned j = 0; j < dataInThisBlock; j++) {
-				innerIndirectBlock[j] = freeMap->Find();
-			}
+		DEBUG('f', "Extending double indirect sectors from %u to %u\n", currentNumSectors, newNumSectors);
 
-			synchDisk->WriteSector(doubleIndirectBlock[i], (char *)innerIndirectBlock);
-			delete[] innerIndirectBlock;
+		if (doubleIndex == 0) {
+			raw.doubleIndirect = freeMap->Find();
+			for (unsigned k = 0; k < POINTERS_PER_SECTOR; k++) doubleIndirectBlock[k] = 0;
+		} else {
+			synchDisk->ReadSector(raw.doubleIndirect, (char *)doubleIndirectBlock);
 		}
 
-		synchDisk->WriteSector(raw.doubleIndirect, (char *)doubleIndirectBlock);
-		delete[] doubleIndirectBlock;
+		bool doubleIndirectChanged = false;
+
+		while (currentNumSectors < newNumSectors) {
+			unsigned innerBlockIndex = doubleIndex / POINTERS_PER_SECTOR;
+			unsigned innerBlockOffset = doubleIndex % POINTERS_PER_SECTOR;
+			unsigned innerIndirectBlock[POINTERS_PER_SECTOR];
+
+			if (innerBlockOffset == 0) {
+				doubleIndirectBlock[innerBlockIndex] = freeMap->Find();
+				for (unsigned k = 0; k < POINTERS_PER_SECTOR; k++) innerIndirectBlock[k] = 0;
+				doubleIndirectChanged = true;
+			} else {
+				synchDisk->ReadSector(doubleIndirectBlock[innerBlockIndex], (char *)innerIndirectBlock);
+			}
+
+			unsigned limit = newNumSectors - currentNumSectors;
+			unsigned spaceInInnerBlock = POINTERS_PER_SECTOR - innerBlockOffset;
+			unsigned toAllocate = (limit < spaceInInnerBlock) ? limit : spaceInInnerBlock;
+
+			for (unsigned k = 0; k < toAllocate; k++) {
+				innerIndirectBlock[innerBlockOffset + k] = freeMap->Find();
+			}
+
+			synchDisk->WriteSector(doubleIndirectBlock[innerBlockIndex], (char *)innerIndirectBlock);
+			currentNumSectors += toAllocate;
+			doubleIndex += toAllocate;
+		}
+
+		if (doubleIndirectChanged) {
+			synchDisk->WriteSector(raw.doubleIndirect, (char *)doubleIndirectBlock);
+		}
 	}
+
+	raw.numBytes = fileSize;
+	raw.numSectors = newNumSectors;
 
 	return true;
 }
@@ -128,6 +218,8 @@ void
 FileHeader::Deallocate(Bitmap *freeMap)
 {
 	ASSERT(freeMap != nullptr);
+
+	DEBUG('f', "Deallocating file header (%u bytes, %u sectors).\n", raw.numBytes, raw.numSectors);
 
 	// Deallocate direct sectors
 	unsigned directSectors = raw.numSectors < NUM_DIRECT ? raw.numSectors : NUM_DIRECT;

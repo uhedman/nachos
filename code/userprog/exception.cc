@@ -65,7 +65,7 @@ DefaultHandler(ExceptionType et)
 
 static void
 ExecProcess(void* args) {
-	currentThread->space->InitRegisters();
+	currentThread->space->InitRegisters(); // TODO
 	currentThread->space->RestoreState();
 
 	if (args != nullptr) {
@@ -307,7 +307,7 @@ SyscallHandler(ExceptionType _et)
             }
 
             DEBUG('e', "`Create` requested for file `%s`.\n", filename);
-            if (!fileSystem->Create(filename, 1024)) {
+            if (!fileSystem->Create(filename)) {
                 DEBUG('e', "Error: could not create file `%s`.\n", filename);
                 machine->WriteRegister(2, -1);
                 break;
