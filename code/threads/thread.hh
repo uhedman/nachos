@@ -106,12 +106,13 @@ private:
 
     /// Thread priority for scheduling
     unsigned priority;
+
+    /// Current working directory sector
+    int cwdSector;
 public:
 
     /// Initialize a `Thread`.
-    Thread(const char *debugName);
-    Thread(const char *debugName, bool willBeJoined);
-    Thread(const char *debugName, bool willBeJoined, unsigned initialPriority);
+    Thread(const char *debugName, bool willBeJoined, unsigned initialPriority, int cwdSector);
 
     /// Deallocate a Thread.
     ///
@@ -147,6 +148,9 @@ public:
 
     void SetPriority(unsigned newPriority);
 
+    const int GetCwdSector() const;
+
+    void SetCwdSector(int newCwd);
 
     void Print() const;
 

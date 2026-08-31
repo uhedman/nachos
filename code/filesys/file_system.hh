@@ -108,6 +108,11 @@ static const unsigned DIRECTORY_FILE_SIZE
   = sizeof (DirectoryEntry) * NUM_DIR_ENTRIES;
 static const unsigned OPEN_FILE_TABLE_SIZE = 20;
 
+struct PathResolution {
+    int parentDirSector;
+    const char *fileName;
+};
+
 
 class FileSystem {
 public:
@@ -130,17 +135,23 @@ public:
     /// Delete a file (UNIX `unlink`).
     bool Remove(const char *name);
 
-    /// Close a file and delete it if it was marked for deletion.
-    void CloseFile(OpenFileEntry *entry);
-
     /// List all the files in the file system.
     void List();
 
-    /// Check the filesystem.
-    bool Check();
+    /// Close a file and delete it if it was marked for deletion.
+    void CloseFile(OpenFileEntry *entry);
 
     /// Extend a file.
     bool ExtendFile(int sector, FileHeader *hdr, unsigned newSize);
+
+    /// Make a new directory, with given name.
+    bool Mkdir(const char *name);
+
+    /// Change the current working directory to the given name.  
+    bool Chdir(const char *name);
+
+    /// Check the filesystem.
+    bool Check();
 
     /// List all the files and their contents.
     void Print();

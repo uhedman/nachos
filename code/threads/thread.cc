@@ -41,43 +41,10 @@ IsThreadStatus(ThreadStatus s)
 /// `Thread::Fork`.
 ///
 /// * `threadName` is an arbitrary string, useful for debugging.
-Thread::Thread(const char *threadName)
-{
-    name          = threadName;
-    stackTop      = nullptr;
-    stack         = nullptr;
-    status        = JUST_CREATED;
-    _willBeJoined = false;
-    joinChannel   = nullptr;
-    priority      = 4;
-#ifdef USER_PROGRAM
-    space     = nullptr;
-    openFiles = new Table<OpenFile *>();
-    openFiles->Add(nullptr);  // File ID 0 is for console input.
-    openFiles->Add(nullptr);  // File ID 1 is for console output.
-    pid       = -1;
-#endif
-}
-
-Thread::Thread(const char *threadName, bool willBeJoined)
-{
-    name          = threadName;
-    stackTop      = nullptr;
-    stack         = nullptr;
-    status        = JUST_CREATED;
-    _willBeJoined = willBeJoined;
-    joinChannel   = willBeJoined ? new Channel("Join Channel") : nullptr;
-    priority      = 4;
-#ifdef USER_PROGRAM
-    space     = nullptr;
-    openFiles = new Table<OpenFile *>();
-    openFiles->Add(nullptr);  // File ID 0 is for console input.
-    openFiles->Add(nullptr);  // File ID 1 is for console output.
-    pid       = -1;
-#endif
-}
-
-Thread::Thread(const char *threadName, bool willBeJoined, unsigned initialPriority)
+/// * `willBeJoined` is a boolean indicating whether the thread will be joined.
+/// * `initialPriority` is the initial priority of the thread.
+/// * `cwdSector` is the sector of the current working directory.
+Thread::Thread(const char *threadName, bool willBeJoined = false, unsigned initialPriority = 4, int cwdSector = -1)
 {
     ASSERT(initialPriority < MAX_PRIORITY);
     name          = threadName;
@@ -87,6 +54,7 @@ Thread::Thread(const char *threadName, bool willBeJoined, unsigned initialPriori
     _willBeJoined = willBeJoined;
     joinChannel   = willBeJoined ? new Channel("Join Channel") : nullptr;
     priority      = initialPriority;
+    cwdSector     = cwdSector;
 #ifdef USER_PROGRAM
     space     = nullptr;
     openFiles = new Table<OpenFile *>();
@@ -226,6 +194,18 @@ Thread::SetPriority(unsigned newPriority)
 {
     priority = newPriority;
     scheduler->UpdatePriority(currentThread, newPriority);
+}
+
+const int
+Thread::GetCwdSector() const
+{
+    return cwdSector;
+}
+
+void
+Thread::SetCwdSector(int newCwd)
+{
+    cwdSector = newCwd;
 }
 
 void

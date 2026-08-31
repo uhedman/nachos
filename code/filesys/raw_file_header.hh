@@ -11,7 +11,7 @@
 
 
 static const unsigned NUM_DIRECT
-	= (SECTOR_SIZE - 4 * sizeof (int)) / sizeof (int);
+	= (SECTOR_SIZE - 5 * sizeof (int)) / sizeof (int);
 static const unsigned POINTERS_PER_SECTOR = SECTOR_SIZE / sizeof(unsigned);
 const unsigned MAX_FILE_SIZE 
 	= (NUM_DIRECT + POINTERS_PER_SECTOR + POINTERS_PER_SECTOR * POINTERS_PER_SECTOR) * SECTOR_SIZE;
@@ -20,6 +20,7 @@ const unsigned MAX_FILE_SIZE
 struct RawFileHeader {
 	unsigned numBytes;  ///< Number of bytes in the file.
 	unsigned numSectors;  ///< Number of data sectors in the file.
+	unsigned isDirectory;  ///< 0 if file, 1 if directory
 	unsigned dataSectors[NUM_DIRECT];  ///< Disk sector numbers for each data
                                        ///< block in the file.
 	unsigned singleIndirect;   ///< Sector containing an array of pointers to data blocks

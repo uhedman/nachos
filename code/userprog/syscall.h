@@ -32,6 +32,8 @@
 #define SC_READ    14
 #define SC_WRITE   15
 #define SC_EXEC2   16
+#define SC_MKDIR   17
+#define SC_CHDIR   18
 
 #ifndef IN_ASM
 
@@ -122,6 +124,12 @@ int Read(char *buffer, int size, OpenFileId id);
 
 /// Close the file, we are done reading and writing to it.
 int Close(OpenFileId id);
+
+/// Make a new directory, with given name.
+int Mkdir(const char *name);
+
+/// Change the current working directory to the given name.  
+int Chdir(const char *name);
 
 
 #endif

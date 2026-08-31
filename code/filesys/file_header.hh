@@ -57,6 +57,12 @@ public:
     /// Return the length of the file in bytes
     unsigned FileLength() const;
 
+    /// Return whether the file is a directory
+    bool IsDirectory() const;
+    
+    /// Set whether the file is a directory
+    void SetDirectory(bool isDir);
+
     /// Print the contents of the file.
     void Print(const char *title);
 

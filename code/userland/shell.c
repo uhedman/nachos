@@ -97,6 +97,17 @@ main(void)
             continue;
         }
 
+        if (strcmp(argv[0], "cd") == 0) {
+            if (argc != 2) {
+                WriteError("Usage: cd <directory>");
+                continue;
+            }
+            if (Chdir(argv[1]) < 0) {
+                WriteError("Error: could not change directory.");
+            }
+            continue;
+        }
+
         // const SpaceId newProc = Exec(cmd, !background);
         const SpaceId newProc = Exec2(cmd, !background, argv);
 
