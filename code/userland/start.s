@@ -141,6 +141,30 @@ Exec2:
         j       $31
         .end    Exec2
 
+        .globl  Mkdir
+        .ent    Mkdir
+Mkdir:
+        addiu   $2, $0, SC_MKDIR
+        syscall
+        j       $31
+        .end    Mkdir
+
+        .globl  Chdir
+        .ent    Chdir
+Chdir:
+        addiu   $2, $0, SC_CHDIR
+        syscall
+        j       $31
+        .end    Chdir
+
+        .globl  Ls
+        .ent    Ls
+Ls:
+        addiu   $2, $0, SC_LIST
+        syscall
+        j       $31
+        .end    Ls
+
 /// Dummy function to keep gcc happy.
         .globl  __main
         .ent    __main

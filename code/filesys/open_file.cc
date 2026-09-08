@@ -67,8 +67,10 @@ OpenFile::Read(char *into, unsigned numBytes)
     ASSERT(into != nullptr);
     ASSERT(numBytes > 0);
 
+    AcquireRead();
     int result = ReadAt(into, numBytes, seekPosition);
     seekPosition += result;
+    ReleaseRead();
     return result;
 }
 
@@ -78,8 +80,10 @@ OpenFile::Write(const char *into, unsigned numBytes)
     ASSERT(into != nullptr);
     ASSERT(numBytes > 0);
 
+    AcquireWrite();
     int result = WriteAt(into, numBytes, seekPosition);
     seekPosition += result;
+    ReleaseWrite();
     return result;
 }
 
@@ -102,6 +106,9 @@ OpenFile::Write(const char *into, unsigned numBytes)
 ///     data that will be modified, and write back all the full or partial
 ///     sectors that are part of the request.
 ///
+/// The caller is responsible for acquiring the appropriate lock before calling
+/// these methods.
+///
 /// * `into` is the buffer to contain the data to be read from disk.
 /// * `from` is the buffer containing the data to be written to disk.
 /// * `numBytes` is the number of bytes to transfer.
@@ -114,14 +121,11 @@ OpenFile::ReadAt(char *into, unsigned numBytes, unsigned position)
     ASSERT(into != nullptr);
     ASSERT(numBytes > 0);
 
-    sharedData->AcquireRead();
-
     unsigned fileLength = hdr->FileLength();
     unsigned firstSector, lastSector, numSectors;
     char *buf;
 
     if (position >= fileLength) {
-        sharedData->ReleaseRead();
         return 0;  // Check request.
     }
     if (position + numBytes > fileLength) {
@@ -145,7 +149,6 @@ OpenFile::ReadAt(char *into, unsigned numBytes, unsigned position)
     memcpy(into, &buf[position - firstSector * SECTOR_SIZE], numBytes);
     delete [] buf;
     
-    sharedData->ReleaseRead();
     return numBytes;
 }
 
@@ -168,15 +171,12 @@ OpenFile::WriteAt(const char *from, unsigned numBytes, unsigned position)
         fileSystem->ExtendFile(sharedData->GetSector(), hdr, newSize);
     }
 
-    sharedData->AcquireWrite();
-
     // Re-fetch the header to ensure it's up to date in case another thread extended it
     // while we were checking or waiting for the lock.
     hdr->FetchFrom(sharedData->GetSector());
     fileLength = hdr->FileLength();
 
     if (position >= fileLength) {
-        sharedData->ReleaseWrite();
         return 0;  // Check request.
     }
     if (position + numBytes > fileLength) {
@@ -213,7 +213,6 @@ OpenFile::WriteAt(const char *from, unsigned numBytes, unsigned position)
     }
     delete [] buf;
     
-    sharedData->ReleaseWrite();
     return numBytes;
 }
 
@@ -222,4 +221,40 @@ unsigned
 OpenFile::Length() const
 {
     return hdr->FileLength();
+}
+
+/// OpenFile::AcquireRead
+///
+/// Acquire the read lock from the file's shared data.
+void
+OpenFile::AcquireRead()
+{
+    sharedData->AcquireRead();
+}
+
+/// OpenFile::ReleaseRead
+///
+/// Release the read lock from the file's shared data.
+void
+OpenFile::ReleaseRead()
+{
+    sharedData->ReleaseRead();
+}
+
+/// OpenFile::AcquireWrite
+///
+/// Acquire the write lock from the file's shared data.
+void
+OpenFile::AcquireWrite()
+{
+    sharedData->AcquireWrite();
+}
+
+/// OpenFile::ReleaseWrite
+///
+/// Release the write lock from the file's shared data.
+void
+OpenFile::ReleaseWrite()
+{
+    sharedData->ReleaseWrite();
 }

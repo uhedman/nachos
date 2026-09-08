@@ -88,6 +88,21 @@ public:
         return SystemDep::Unlink(name) == 0;
     }
 
+    bool Mkdir(const char *name)
+    {
+        return false;
+    }
+
+    bool Chdir(const char *name)
+    {
+        return false;
+    }
+
+    bool List(const char *name)
+    {
+        return false;
+    }
+
 };
 
 #else  // FILESYS
@@ -107,6 +122,11 @@ static const unsigned NUM_DIR_ENTRIES = 10;
 static const unsigned DIRECTORY_FILE_SIZE
   = sizeof (DirectoryEntry) * NUM_DIR_ENTRIES;
 static const unsigned OPEN_FILE_TABLE_SIZE = 20;
+
+struct PathResolution {
+    int parentDirSector;
+    const char *fileName;
+};
 
 
 class FileSystem {
@@ -130,22 +150,34 @@ public:
     /// Delete a file (UNIX `unlink`).
     bool Remove(const char *name);
 
+    /// List files in a directory.
+    bool List(const char *name);
+
     /// Close a file and delete it if it was marked for deletion.
     void CloseFile(OpenFileEntry *entry);
 
-    /// List all the files in the file system.
-    void List();
+    /// Extend a file.
+    bool ExtendFile(int sector, FileHeader *hdr, unsigned newSize);
+
+    /// Make a new directory, with given name.
+    bool Mkdir(const char *name);
+
+    /// Change the current working directory to the given name.  
+    bool Chdir(const char *name);
 
     /// Check the filesystem.
     bool Check();
-
-    /// Extend a file.
-    bool ExtendFile(int sector, FileHeader *hdr, unsigned newSize);
 
     /// List all the files and their contents.
     void Print();
 
 private:
+    /// Resolve the path to a file or directory. It returns the parent directory sector and the file name.
+    bool ResolvePath(const char *path, PathResolution *resolution);
+
+    /// Get the open file entry for a given sector.
+    OpenFileEntry *GetOpenFileEntry(int sector);
+
     OpenFile *freeMapFile;  ///< Bit map of free disk blocks, represented as a
                             ///< file.
     OpenFile *directoryFile;  ///< “Root” directory -- list of file names,

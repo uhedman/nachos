@@ -141,9 +141,10 @@ Directory::Add(const char *name, int newSector)
             return true;
         }
     }
+
     // Expand directory table
     unsigned oldSize = raw.tableSize;
-    unsigned newSize = oldSize + 10;
+    unsigned newSize = oldSize + 1;
     
     DEBUG('f', "Expanding directory table from %u to %u entries.\n", oldSize, newSize);
 
@@ -153,15 +154,11 @@ Directory::Add(const char *name, int newSector)
         newTable[i] = raw.table[i];
     }
     
-    for (unsigned i = oldSize; i < newSize; i++) {
-        newTable[i].inUse = false;
-    }
-    
     delete [] raw.table;
     raw.table = newTable;
     raw.tableSize = newSize;
     
-    // Add the new entry in the first newly allocated slot
+    DEBUG('f', "Added new entry at index %u: name=%s, sector=%d.\n", oldSize, name, newSector);
     raw.table[oldSize].inUse = true;
     strncpy(raw.table[oldSize].name, name, FILE_NAME_MAX_LEN);
     raw.table[oldSize].sector = newSector;

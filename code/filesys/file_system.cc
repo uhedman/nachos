@@ -44,6 +44,7 @@
 
 #include "file_system.hh"
 #include "threads/lock.hh"
+#include "threads/system.hh"
 #include "directory.hh"
 #include "file_header.hh"
 #include "lib/bitmap.hh"
@@ -93,6 +94,10 @@ FileSystem::FileSystem(bool format)
 
         ASSERT(mapH->Allocate(freeMap, FREE_MAP_FILE_SIZE));
         ASSERT(dirH->Allocate(freeMap, DIRECTORY_FILE_SIZE));
+        
+        dirH->SetDirectory(true);
+        dir->Add(".", DIRECTORY_SECTOR);
+        dir->Add("..", DIRECTORY_SECTOR);
 
         // Flush the bitmap and directory `FileHeader`s back to disk.
         // We need to do this before we can `Open` the file, since open reads
@@ -107,7 +112,7 @@ FileSystem::FileSystem(bool format)
         // The file system operations assume these two files are left open
         // while Nachos is running.
 
-        freeMapFile = new OpenFile(new OpenFileEntry(FREE_MAP_SECTOR));        
+        freeMapFile = new OpenFile(new OpenFileEntry(FREE_MAP_SECTOR));
         directoryFile = new OpenFile(new OpenFileEntry(DIRECTORY_SECTOR));
 
         // Once we have the files “open”, we can write the initial version of
@@ -123,12 +128,12 @@ FileSystem::FileSystem(bool format)
         if (debug.IsEnabled('f')) {
             freeMap->Print();
             dir->Print();
-
-            delete freeMap;
-            delete dir;
-            delete mapH;
-            delete dirH;
         }
+
+        delete freeMap;
+        delete dir;
+        delete mapH;
+        delete dirH;
     } else {
         // If we are not formatting the disk, just open the files
         // representing the bitmap and directory; these are left open while
@@ -179,89 +184,115 @@ FileSystem::Create(const char *name)
 
     DEBUG('f', "Creating file %s\n", name);
 
-    directoryLock->Acquire();
+    PathResolution resolution;
+    bool resolutionSuccess = ResolvePath(name, &resolution);
 
-    Directory *dir = new Directory(NUM_DIR_ENTRIES);
-    dir->FetchFrom(directoryFile);
+    if (!resolutionSuccess) {
+        DEBUG('f', "File %s cannot be created: invalid path\n", name);
+        return false;
+    }
+
+    if (strcmp(resolution.fileName, "") == 0) {
+        DEBUG('f', "File %s cannot be created: invalid name\n", name);
+        delete[] resolution.fileName;
+        return false;
+    }
+
+    const char *fileName = resolution.fileName;
+    int parentDirSector = resolution.parentDirSector;
+
+    OpenFileEntry *parentEntry = GetOpenFileEntry(parentDirSector);
+    if (parentEntry == nullptr) {
+        delete[] fileName;
+        return false;
+    }
+    OpenFile *parentDirFile = new OpenFile(parentEntry);
+    parentDirFile->AcquireWrite();
+    Directory *parentDir = new Directory(NUM_DIR_ENTRIES);
+    parentDir->FetchFrom(parentDirFile);
 
     bool success;
 
-    if (dir->Find(name) != -1) {
-        DEBUG('f', "File %s already exists\n", name);
+    if (parentDir->Find(fileName) != -1) {
+        DEBUG('f', "File %s already exists\n", fileName);
         success = false;
     } else {
         Bitmap *freeMap = new Bitmap(NUM_SECTORS);
 
         freeMapLock->Acquire();
         freeMap->FetchFrom(freeMapFile);
+        
         int sector = freeMap->Find();
-        if (sector != -1) {
-            freeMap->WriteBack(freeMapFile);
-        }
-        freeMapLock->Release();
-
+        
         if (sector == -1) {
-            DEBUG('f', "File %s cannot be created: no free space for file header\n", name);
+            DEBUG('f', "File %s cannot be created: no free space for file header\n", fileName);
+            freeMapLock->Release();
             success = false;
-        } else if (!dir->Add(name, sector)){
-            DEBUG('f', "File %s cannot be created: no free space in directory\n", name);
+        } else if (!parentDir->Add(fileName, sector)){
+            DEBUG('f', "File %s cannot be created: no free space in directory\n", fileName);
+            freeMapLock->Release();
             success = false;
         } else {
             FileHeader *h = new FileHeader;
             success = h->Allocate(freeMap, 0);
 
             if (success) {
-                DEBUG('f', "File %s created, sector %d\n", name, sector);
+                freeMap->WriteBack(freeMapFile);
+                freeMapLock->Release();
+
+                DEBUG('f', "File %s created, sector %d\n", fileName, sector);
                 h->WriteBack(sector);
-                dir->WriteBack(directoryFile);
+                parentDir->WriteBack(parentDirFile);
             } else {
-                DEBUG('f', "File %s cannot be created: no free space for data blocks\n", name);
+                DEBUG('f', "File %s cannot be created: no free space for data blocks\n", fileName);
+                freeMapLock->Release();
             }
 
             delete h;
         }
         delete freeMap;
     }
-    delete dir;
-    directoryLock->Release();
+    
+    parentDirFile->ReleaseWrite();
+    delete parentDirFile;
+    delete parentDir;
+    delete[] fileName;
+    
     return success;
 }
 
-
-/// * `sector` is the sector number of the file header.
-/// * `hdr` is the file header.
-/// * `newSize` is the new size of the file.
-bool
-FileSystem::ExtendFile(int sector, FileHeader *hdr, unsigned newSize)
+OpenFileEntry *
+FileSystem::GetOpenFileEntry(int sector)
 {
-    DEBUG('f', "Requested extend for file with header at sector %d to %u bytes.\n", sector, newSize);
+    OpenFileEntry *entry = nullptr;
 
-    freeMapLock->Acquire();
-
-    hdr->FetchFrom(sector);
-    if (newSize <= hdr->FileLength()) {
-        freeMapLock->Release();
-        DEBUG('f', "Sector %d already has length %u >= %u.\n", sector, hdr->FileLength(), newSize);
-        return true;
+    openFileTableLock->Acquire();
+    for (unsigned i = 0; i < OPEN_FILE_TABLE_SIZE; i++) {
+        if (openFileTable->HasKey(i)) {
+            OpenFileEntry *e = openFileTable->Get(i);
+            if (e->GetSector() == sector) {
+                entry = e;
+                break;
+            }
+        }
     }
 
-    Bitmap *freeMap = new Bitmap(NUM_SECTORS);
-    freeMap->FetchFrom(freeMapFile);
-
-    bool success = hdr->Extend(freeMap, newSize);
-
-    if (success) {
-        freeMap->WriteBack(freeMapFile);
-        hdr->WriteBack(sector);
+    if (entry == nullptr) {
+        entry = new OpenFileEntry(sector);
+        if (openFileTable->Add(entry) == -1) {
+            DEBUG('f', "Open file table is full. Cannot open file entry for sector %d\n", sector);
+            delete entry;
+            openFileTableLock->Release();
+            return nullptr;
+        }
     }
 
-    freeMapLock->Release();
-    delete freeMap;
+    entry->AcquireMetaLock();
+    entry->AddOpener();
+    entry->ReleaseMetaLock();
+    openFileTableLock->Release();
 
-    DEBUG('f', "ExtendFile: sector %d %s (length now %u bytes).\n",
-          sector, success ? "succeeded" : "failed", hdr->FileLength());
-
-    return success;
+    return entry;
 }
 
 /// Open a file for reading and writing.
@@ -276,50 +307,61 @@ FileSystem::Open(const char *name)
 {
     ASSERT(name != nullptr);
 
-    Directory *dir = new Directory(NUM_DIR_ENTRIES);
-    OpenFile  *openFile = nullptr;
+    PathResolution resolution;
+    bool resolutionSuccess = ResolvePath(name, &resolution);
 
-    directoryLock->Acquire();
+    if (!resolutionSuccess) {
+        DEBUG('f', "File %s cannot be opened: invalid path\n", name);
+        return nullptr;
+    }
+
+    const char *fileName = resolution.fileName;
+    int parentDirSector = resolution.parentDirSector;
+    int sector;
+
+    if (strcmp(fileName, "") == 0) {
+        sector = parentDirSector;
+    } else {
+        OpenFileEntry *parentEntry = GetOpenFileEntry(parentDirSector);
+        if (parentEntry == nullptr) {
+            delete[] fileName;
+            return nullptr;
+        }
+        OpenFile *parentDirFile = new OpenFile(parentEntry);
+        Directory *parentDir = new Directory(NUM_DIR_ENTRIES);
+        
+        parentDirFile->AcquireRead();
+        parentDir->FetchFrom(parentDirFile);
+
+        sector = parentDir->Find(fileName);
+
+        if (sector == -1) {
+            DEBUG('f', "File %s cannot be opened: not found\n", name);
+            delete[] fileName;
+            parentDirFile->ReleaseRead();
+            delete parentDirFile;
+            delete parentDir;
+            return nullptr;
+        }
+
+        parentDirFile->ReleaseRead();
+        delete parentDirFile;
+        delete parentDir;
+    }
 
     DEBUG('f', "Opening file %s\n", name);
-    dir->FetchFrom(directoryFile);
-    int sector = dir->Find(name);
-    if (sector >= 0) {
-        OpenFileEntry *entry = nullptr;
-
-        openFileTableLock->Acquire();
-        for (unsigned i = 0; i < OPEN_FILE_TABLE_SIZE; i++) {
-            if (openFileTable->HasKey(i)) {
-                OpenFileEntry *e = openFileTable->Get(i);
-                if (e->GetSector() == sector) {
-                    entry = e;
-                    break;
-                }
-            }
-        }
-
-        if (entry == nullptr) {
-            entry = new OpenFileEntry(sector);
-            if (openFileTable->Add(entry) == -1) {
-                DEBUG('f', "Open file table is full. Cannot open file %s\n", name);
-                delete entry;
-                openFileTableLock->Release();
-                delete dir;
-                directoryLock->Release();
-                return nullptr;
-            }
-        }
-
-        entry->AcquireMetaLock();
-        entry->AddOpener();
-        entry->ReleaseMetaLock();
-        openFileTableLock->Release();
-
-        openFile = new OpenFile(entry);  // `name` was found in directory.
+    
+    OpenFileEntry *entry = GetOpenFileEntry(sector);
+    if (entry == nullptr) {
+        delete[] fileName;
+        return nullptr;
     }
-    delete dir;
-    directoryLock->Release();
-    return openFile;  // Return null if not found.
+
+    OpenFile *openFile = new OpenFile(entry);  // `fileName` was found in directory (or it's root).
+    DEBUG('f', "Opened file %s, sector %d\n", name, sector);
+
+    delete[] fileName;
+    return openFile;
 }
 
 /// Delete a file from the file system.
@@ -339,58 +381,117 @@ FileSystem::Remove(const char *name)
 {
     ASSERT(name != nullptr);
 
-    directoryLock->Acquire();
+    PathResolution resolution;
+    bool resolutionSuccess = ResolvePath(name, &resolution);
 
-    Directory *dir = new Directory(NUM_DIR_ENTRIES);
-    dir->FetchFrom(directoryFile);
-    int sector = dir->Find(name);
+    if (!resolutionSuccess) {
+        DEBUG('f', "File %s cannot be removed: invalid path\n", name);
+        return false;
+    }
+
+    if (strcmp(resolution.fileName, "") == 0) {
+        DEBUG('f', "File %s cannot be removed: invalid name\n", name);
+        delete[] resolution.fileName;
+        return false;
+    }
+
+    const char *fileName = resolution.fileName;
+    int parentDirSector = resolution.parentDirSector;
+
+    OpenFileEntry *parentEntry = GetOpenFileEntry(parentDirSector);
+    if (parentEntry == nullptr) {
+        delete[] fileName;
+        return false;
+    }
+
+    OpenFile *parentDirFile = new OpenFile(parentEntry);
+    Directory *parentDir = new Directory(NUM_DIR_ENTRIES);
+    
+    parentDirFile->AcquireWrite();
+    parentDir->FetchFrom(parentDirFile);
+
+    int sector = parentDir->Find(fileName);
     if (sector == -1) {
-       delete dir;
-       directoryLock->Release();
-       return false;  // file not found
+        DEBUG('f', "File %s cannot be removed: file not found\n", fileName);
+        parentDirFile->ReleaseWrite();
+        delete parentDir;
+        delete parentDirFile;
+        delete[] fileName;
+        return false;  // file not found
     }
 
-    bool isOpen = false;
-    openFileTableLock->Acquire();
-    for (unsigned i = 0; i < OPEN_FILE_TABLE_SIZE; i++) {
-        if (openFileTable->HasKey(i)) {
-            OpenFileEntry *e = openFileTable->Get(i);
-            if (e->GetSector() == sector) {
-                e->AcquireMetaLock();
-                e->MarkForRemoval();
-                e->ReleaseMetaLock();
-                isOpen = true;
-                break;
-            }
-        }
+    FileHeader *fileH = new FileHeader;
+    fileH->FetchFrom(sector);
+    if (fileH->IsDirectory()) {
+        DEBUG('f', "File %s cannot be removed: is a directory\n", fileName);
+        delete fileH;
+        parentDirFile->ReleaseWrite();
+        delete parentDir;
+        delete parentDirFile;
+        delete[] fileName;
+        return false;
     }
-    openFileTableLock->Release();
+    delete fileH;
 
-    // Borramos del directorio para impedir nuevas aberturas
-    dir->Remove(name);
-    dir->WriteBack(directoryFile);    // Flush to disk.
+    OpenFileEntry *fileEntry = GetOpenFileEntry(sector);
+    if (fileEntry != nullptr) {
+        fileEntry->AcquireMetaLock();
+        fileEntry->MarkForRemoval();
+        fileEntry->ReleaseMetaLock();
+    }
 
-    // Si nadie lo tiene abierto, liberamos los bloques físicos ahora.
-    // Si alguien lo tiene abierto, lo liberará el último en cerrarlo.
-    if (!isOpen) {
-        FileHeader *fileH = new FileHeader;
-        fileH->FetchFrom(sector);
+    parentDir->Remove(fileName);
+    parentDir->WriteBack(parentDirFile);    // Flush to disk.
+
+    parentDirFile->ReleaseWrite();
+
+    if (fileEntry != nullptr) {
+        CloseFile(fileEntry);
+    } else {
+        // Open file table was full; deallocate immediately.
+        FileHeader *rmH = new FileHeader;
+        rmH->FetchFrom(sector);
 
         freeMapLock->Acquire();
         Bitmap *freeMap = new Bitmap(NUM_SECTORS);
         freeMap->FetchFrom(freeMapFile);
-
-        fileH->Deallocate(freeMap);  // Remove data blocks.
-        freeMap->Clear(sector);      // Remove header block.
-        freeMap->WriteBack(freeMapFile);  // Flush to disk.
+        rmH->Deallocate(freeMap);
+        freeMap->Clear(sector);
+        freeMap->WriteBack(freeMapFile);
         freeMapLock->Release();
-        
-        delete fileH;
+
+        delete rmH;
         delete freeMap;
     }
     
+    delete parentDir;
+    delete parentDirFile;
+    delete[] fileName;
+    return true;
+}
+
+/// List all the files in the current directory.
+bool
+FileSystem::List(const char *name)
+{
+    if (name == nullptr) {
+        return false;
+    }
+
+    OpenFile *cwdFile = Open(name);
+    if (cwdFile == nullptr) {
+        return false;
+    }
+
+    Directory *dir = new Directory(NUM_DIR_ENTRIES);
+
+    cwdFile->AcquireRead();
+    dir->FetchFrom(cwdFile);
+    dir->List();
+    cwdFile->ReleaseRead();
+
+    delete cwdFile;
     delete dir;
-    directoryLock->Release();
     return true;
 }
 
@@ -443,18 +544,292 @@ FileSystem::CloseFile(OpenFileEntry *entry)
     }
 }
 
-/// List all the files in the file system directory.
-void
-FileSystem::List()
+/// * `sector` is the sector number of the file header.
+/// * `hdr` is the file header.
+/// * `newSize` is the new size of the file.
+bool
+FileSystem::ExtendFile(int sector, FileHeader *hdr, unsigned newSize)
 {
-    Directory *dir = new Directory(NUM_DIR_ENTRIES);
+    DEBUG('f', "Requested extend for file with header at sector %d to %u bytes.\n", sector, newSize);
 
-    directoryLock->Acquire();
-    dir->FetchFrom(directoryFile);
-    dir->List();
-    directoryLock->Release();
+    hdr->FetchFrom(sector);
+    if (newSize <= hdr->FileLength()) {
+        DEBUG('f', "Sector %d already has length %u >= %u.\n", sector, hdr->FileLength(), newSize);
+        return true;
+    }
 
-    delete dir;
+    freeMapLock->Acquire();
+
+    Bitmap *freeMap = new Bitmap(NUM_SECTORS);
+    freeMap->FetchFrom(freeMapFile);
+
+    bool success = hdr->Extend(freeMap, newSize);
+
+    if (success) {
+        freeMap->WriteBack(freeMapFile);
+        hdr->WriteBack(sector);
+        DEBUG('f', "ExtendFile: sector %d succeeded (length now %u bytes).\n",
+              sector, hdr->FileLength());
+    } else {
+        DEBUG('f', "ExtendFile: sector %d failed.\n", sector);
+    }
+
+    freeMapLock->Release();
+    delete freeMap;
+
+    return success;
+}
+
+bool
+FileSystem::Mkdir(const char *name) {
+    ASSERT(name != nullptr);
+
+    DEBUG('f', "Creating directory %s\n", name);
+
+    PathResolution resolution;
+    bool resolutionSuccess = ResolvePath(name, &resolution);
+
+    if (!resolutionSuccess) {
+        return false;
+    }
+
+    if (strcmp(resolution.fileName, "") == 0) {
+        delete[] resolution.fileName;
+        return false;
+    }
+
+    int parentDirSector = resolution.parentDirSector;
+    const char *dirName = resolution.fileName;
+    
+    OpenFileEntry *parentEntry = GetOpenFileEntry(parentDirSector);
+    if (parentEntry == nullptr) {
+        delete[] resolution.fileName;
+        return false;
+    }
+
+    OpenFile *parentDirFile = new OpenFile(parentEntry);
+    Directory *parentDir = new Directory(NUM_DIR_ENTRIES);
+    
+    parentDirFile->AcquireWrite();
+    parentDir->FetchFrom(parentDirFile);
+
+    bool success;
+
+    if (parentDir->Find(dirName) != -1) {
+        DEBUG('f', "Directory %s already exists\n", dirName);
+        success = false;
+    } else {
+        Bitmap *freeMap = new Bitmap(NUM_SECTORS);
+
+        freeMapLock->Acquire();
+        freeMap->FetchFrom(freeMapFile);
+        
+        int sector = freeMap->Find();
+        
+        if (sector == -1) {
+            DEBUG('f', "Directory %s cannot be created: no free space for directory header\n", dirName);
+            success = false;
+            freeMapLock->Release();
+        } else if (!parentDir->Add(dirName, sector)){
+            DEBUG('f', "Directory %s cannot be created: no free space in directory\n", dirName);
+            success = false;
+            freeMapLock->Release();
+        } else {
+            FileHeader *h = new FileHeader;
+            Directory *newDir = new Directory(NUM_DIR_ENTRIES);
+
+            // Asignar bloques de datos MIENTRAS tenemos el lock del freeMap
+            success = h->Allocate(freeMap, DIRECTORY_FILE_SIZE);
+            
+            if (success) {
+                h->SetDirectory(true);
+                
+                // Guardar los cambios del freeMap en disco ANTES de soltar el lock
+                freeMap->WriteBack(freeMapFile);
+                freeMapLock->Release();
+                
+                DEBUG('f', "Directory %s created, sector %d\n", dirName, sector);
+                
+                OpenFile *dirFile = new OpenFile(new OpenFileEntry(sector));
+                dirFile->AcquireWrite();
+                
+                h->WriteBack(sector);
+                
+                newDir->Add(".", sector);
+                newDir->Add("..", parentDirSector);
+                
+                newDir->WriteBack(dirFile);
+                parentDir->WriteBack(parentDirFile);
+                
+                dirFile->ReleaseWrite();
+                delete dirFile;
+            } else {
+                DEBUG('f', "Directory %s cannot be created: no free space for data blocks\n", dirName);
+                freeMapLock->Release();
+            }
+
+            delete newDir;
+            delete h;
+        }
+        delete freeMap;
+    }
+    
+    parentDirFile->ReleaseWrite();
+    delete[] resolution.fileName; 
+    delete parentDir;
+    delete parentDirFile; 
+    
+    return success;
+}
+
+bool
+FileSystem::Chdir(const char *name) {
+    ASSERT(name != nullptr);
+
+    PathResolution resolution;
+    bool success = ResolvePath(name, &resolution);
+
+    if (!success) {
+        return false;
+    }
+
+    if (strcmp(resolution.fileName, "") == 0) {
+        currentThread->SetCwdSector(resolution.parentDirSector);
+        delete[] resolution.fileName;
+        return true;
+    }
+
+    OpenFileEntry *parentEntry = GetOpenFileEntry(resolution.parentDirSector);
+    if (parentEntry == nullptr) {
+        delete[] resolution.fileName;
+        return false;
+    }
+
+    OpenFile *parentDirFile = new OpenFile(parentEntry);
+    Directory *parentDir = new Directory(NUM_DIR_ENTRIES);
+    
+    parentDirFile->AcquireRead();
+    parentDir->FetchFrom(parentDirFile);
+
+    int dirSector = parentDir->Find(resolution.fileName);
+    if (dirSector == -1) {
+        DEBUG('f', "Directory %s cannot be found\n", resolution.fileName);
+        parentDirFile->ReleaseRead();
+        delete parentDir;
+        delete parentDirFile;
+        delete[] resolution.fileName;
+        return false;
+    }
+
+    FileHeader *dirH = new FileHeader;
+    dirH->FetchFrom(dirSector);
+    
+    if (!dirH->IsDirectory()) {
+        DEBUG('f', "File %s is not a directory\n", resolution.fileName);
+        delete dirH;
+        parentDirFile->ReleaseRead();
+        delete parentDir;
+        delete parentDirFile;
+        delete[] resolution.fileName;
+        return false;
+    }
+
+    currentThread->SetCwdSector(dirSector);
+    parentDirFile->ReleaseRead();
+    delete[] resolution.fileName;
+    delete parentDir;
+    delete parentDirFile;
+    delete dirH;
+    return true;
+}
+
+bool
+FileSystem::ResolvePath(const char *path, PathResolution* resolution) { // TODO
+    if (path == nullptr || resolution == nullptr) {
+        return false;
+    }
+
+    int currentSector;
+    if (path[0] == '/') {
+        currentSector = DIRECTORY_SECTOR;
+    } else {
+        currentSector = currentThread->GetCwdSector();
+    }
+
+    char *pathCopy = new char[strlen(path) + 1];
+    strcpy(pathCopy, path);
+
+    char *savePtr = nullptr;
+    char *token = strtok_r(pathCopy, "/", &savePtr);
+    char *nextToken = nullptr;
+
+    if (token == nullptr) {
+        // La ruta es vacía, "/" o similar ("////")
+        delete[] pathCopy;
+        resolution->parentDirSector = currentSector;
+        char *emptyStr = new char[1];
+        emptyStr[0] = '\0';
+        resolution->fileName = emptyStr;
+        return true;
+    }
+
+    while (token != nullptr) {
+        nextToken = strtok_r(nullptr, "/", &savePtr);
+
+        if (nextToken == nullptr) {
+            // Último token: es el nombre del archivo o directorio final
+            resolution->parentDirSector = currentSector;
+            char *finalName = new char[strlen(token) + 1];
+            strcpy(finalName, token);
+            resolution->fileName = finalName;
+            break;
+        } else {
+            // Token intermedio: buscarlo en el directorio actual
+            if (strcmp(token, ".") == 0) {
+                // Mantenerse en el mismo directorio
+            } else {
+                // El caso de ".." debería funcionar automáticamente si 
+                // agregaste las entradas "." y ".." al crear el directorio.
+                OpenFileEntry *dirEntry = GetOpenFileEntry(currentSector);
+                if (dirEntry == nullptr) {
+                    delete[] pathCopy;
+                    return false;
+                }
+                OpenFile *dirFile = new OpenFile(dirEntry);
+                Directory *dir = new Directory(NUM_DIR_ENTRIES);
+                
+                dirFile->AcquireRead();
+                dir->FetchFrom(dirFile);
+                int nextSector = dir->Find(token);
+                dirFile->ReleaseRead();
+                
+                delete dir;
+                delete dirFile;
+
+                if (nextSector == -1) {
+                    delete[] pathCopy;
+                    return false; // El directorio intermedio no existe
+                }
+
+                // Verificar que el sector encontrado sea efectivamente un directorio
+                FileHeader *fh = new FileHeader;
+                fh->FetchFrom(nextSector);
+                bool isDir = fh->IsDirectory();
+                delete fh;
+
+                if (!isDir) {
+                    delete[] pathCopy;
+                    return false; // No se puede atravesar un archivo normal
+                }
+
+                currentSector = nextSector;
+            }
+        }
+        token = nextToken;
+    }
+
+    delete[] pathCopy;
+    return true;
 }
 
 static bool

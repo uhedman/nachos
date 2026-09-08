@@ -144,7 +144,12 @@ SyscallHandler(ExceptionType _et)
                 break;
             }
             
-            Thread *newThread = new Thread(filename, bool(joinable), currentThread->GetPriority());
+            Thread *newThread = new Thread(
+                filename, 
+                bool(joinable), 
+                currentThread->GetPriority(),
+                currentThread->GetCwdSector()
+            );
 
             SpaceId pid = processTable->Add(newThread);
             if (pid == -1) {
@@ -221,7 +226,12 @@ SyscallHandler(ExceptionType _et)
                 break;
             }
             
-            Thread *newThread = new Thread(filename, bool(joinable), currentThread->GetPriority());
+            Thread *newThread = new Thread(
+                filename, 
+                bool(joinable), 
+                currentThread->GetPriority(),
+                currentThread->GetCwdSector()
+            );
 
             SpaceId pid = processTable->Add(newThread);
             if (pid == -1) {
@@ -486,6 +496,92 @@ SyscallHandler(ExceptionType _et)
             DEBUG('e', "`Read` completed successfully for id %u, bytes read: %d.\n",
                   fid, bytesRead);
             machine->WriteRegister(2, bytesRead);
+            break;
+        }
+
+        case SC_MKDIR: {
+            int dirnameAddr = machine->ReadRegister(4);
+            if (dirnameAddr == 0) {
+                DEBUG('e', "Error: address to directory name string is null.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            char dirname[FILE_NAME_MAX_LEN + 1];
+            if (!ReadStringFromUser(dirnameAddr,
+                                    dirname, sizeof dirname)) {
+                DEBUG('e', "Error: directory name string too long (maximum is %u bytes).\n",
+                      FILE_NAME_MAX_LEN);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "`Mkdir` requested for directory `%s`.\n", dirname);
+            if (!fileSystem->Mkdir(dirname)) {
+                DEBUG('e', "Error: could not create directory `%s`.\n", dirname);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "Directory `%s` created successfully.\n", dirname);
+            machine->WriteRegister(2, 0);
+            break;
+        }
+
+        case SC_CHDIR: {
+            int dirnameAddr = machine->ReadRegister(4);
+            if (dirnameAddr == 0) {
+                DEBUG('e', "Error: address to directory name string is null.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            char dirname[FILE_NAME_MAX_LEN + 1];
+            if (!ReadStringFromUser(dirnameAddr,
+                                    dirname, sizeof dirname)) {
+                DEBUG('e', "Error: directory name string too long (maximum is %u bytes).\n",
+                      FILE_NAME_MAX_LEN);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "`Chdir` requested for directory `%s`.\n", dirname);
+            if (!fileSystem->Chdir(dirname)) {
+                DEBUG('e', "Error: could not change directory to `%s`.\n", dirname);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "Directory `%s` changed successfully.\n", dirname);
+            machine->WriteRegister(2, 0);
+            break;
+        }
+
+        case SC_LIST: {
+            int dirnameAddr = machine->ReadRegister(4);
+            if (dirnameAddr == 0) {
+                DEBUG('e', "Error: address to directory name string is null.\n");
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            char dirname[FILE_NAME_MAX_LEN + 1];
+            if (!ReadStringFromUser(dirnameAddr,
+                                    dirname, sizeof dirname)) {
+                DEBUG('e', "Error: directory name string too long (maximum is %u bytes).\n",
+                      FILE_NAME_MAX_LEN);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            DEBUG('e', "`List` requested for directory `%s`.\n", dirname);
+            if (!fileSystem->List(dirname)) {
+                DEBUG('e', "Error: could not list directory `%s`.\n", dirname);
+                machine->WriteRegister(2, -1);
+                break;
+            }
+
+            machine->WriteRegister(2, 0);
             break;
         }
 

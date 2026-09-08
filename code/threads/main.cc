@@ -169,7 +169,7 @@ main(int argc, char **argv)
             fileSystem->Remove(*(argv + 1));
             argCount = 2;
         } else if (!strcmp(*argv, "-ls")) {  // List Nachos directory.
-            fileSystem->List();
+            fileSystem->List("/");
             printf("\n");
         } else if (!strcmp(*argv, "-D")) {   // Print entire filesystem.
             fileSystem->Print();

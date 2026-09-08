@@ -116,6 +116,18 @@ public:
     // the UNIX idiom -- `lseek` to end of file, `tell`, `lseek` back).
     unsigned Length() const;
 
+    /// Acquire the read lock before reading from the file.
+    void AcquireRead();
+    
+    /// Release the read lock after reading from the file.
+    void ReleaseRead();
+
+    /// Acquire the write lock before modifying the file.
+    void AcquireWrite();
+
+    /// Release the write lock after modifying the file.
+    void ReleaseWrite();
+
   private:
     FileHeader *hdr;  ///< Header for this file.
     unsigned seekPosition;  ///< Current position within the file.

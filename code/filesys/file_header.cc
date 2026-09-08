@@ -47,6 +47,7 @@ FileHeader::Allocate(Bitmap *freeMap, unsigned initialFileSize)
 
 	raw.numBytes = 0;
 	raw.numSectors = 0;
+	raw.isDirectory = 0;
 
 	if (initialFileSize == 0) {
 		return true;
@@ -344,6 +345,20 @@ unsigned
 FileHeader::FileLength() const
 {
 	return raw.numBytes;
+}
+
+/// Return whether the file is a directory
+bool
+FileHeader::IsDirectory() const
+{
+	return raw.isDirectory == 1;
+}
+
+/// Set whether the file is a directory
+void
+FileHeader::SetDirectory(bool isDir)
+{
+	raw.isDirectory = isDir ? 1 : 0;
 }
 
 /// Print the contents of the file header, and the contents of all the data

@@ -36,7 +36,8 @@ CFLAGS       = -std=c99 -G 0 -c $(INCLUDE_DIRS) -mips1 -mfp32 \
                -nostdlib -nostartfiles -nodefaultlibs -fno-pic -mno-abicalls
 
 PROGRAMS = cat cp echo filetest halt matmult rm shell sort tinyshell touch \
-           fst_creat fst_writ fst_read fst_del fst_mast
+           fst_creat fst_writ fst_read fst_del fst_mast \
+		   mkdir ls 
 
 
 .PHONY: all clean
@@ -55,9 +56,6 @@ start.o: start.s ../userprog/syscall.h
 	@$(RM) strt.s
 
 
-# Las reglas gen�ricas que siguen sirven para compilar programas simples,
-# que consistan en un �nico archivo fuente. Si se quieren compilar programas
-# m�s complejos, se deben agregar reglas adecuadas.
 
 %.o: %.c
 	@echo ":: Compiling $$(tput bold)$@$$(tput sgr0)"

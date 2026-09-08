@@ -226,19 +226,19 @@ Cleanup()
 {
     DEBUG('i', "Cleaning up...\n");
 
-#ifdef USER_PROGRAM
-    delete machine;
-    delete synchConsole;
-    delete processTable;
-    processTable = nullptr;
-#endif
-
 #ifdef FILESYS_NEEDED
     delete fileSystem;
 #endif
 
 #ifdef FILESYS
     delete synchDisk;
+#endif
+
+#ifdef USER_PROGRAM
+    delete machine;
+    delete synchConsole;
+    delete processTable;
+    processTable = nullptr;
 #endif
 
     delete timer;

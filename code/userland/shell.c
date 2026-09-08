@@ -30,11 +30,11 @@ WriteError(const char *description)
 }
 
 
-static bool
+static int
 PrepareArguments(char *line, char **argv, unsigned argvSize)
 {
     if (line == NULL || argv == NULL || argvSize == 0) {
-        return false;
+        return -1;
     }
 
     unsigned argCount;
@@ -57,7 +57,7 @@ PrepareArguments(char *line, char **argv, unsigned argvSize)
                 // The maximum of allowed arguments is exceeded, and
                 // therefore the size of `argv` is too.  Note that 1 is
                 // decreased in order to leave space for the NULL at the end.
-                return false;
+                return -1;
             }
             line[i] = '\0';
             argv[argCount] = &line[i + 1];
@@ -66,7 +66,7 @@ PrepareArguments(char *line, char **argv, unsigned argvSize)
     }
 
     argv[argCount] = NULL;
-    return true;
+    return argCount;
 }
 
 int
@@ -92,8 +92,20 @@ main(void)
             }
         }
 
-        if (PrepareArguments(cmd, argv, MAX_ARG_COUNT) == false) {
+        const int argc = PrepareArguments(cmd, argv, MAX_ARG_COUNT);
+        if (argc < 0) {
             WriteError("too many arguments.");
+            continue;
+        }
+
+        if (strcmp(argv[0], "cd") == 0) {
+            if (argc != 2) {
+                WriteError("Usage: cd <directory>");
+                continue;
+            }
+            if (Chdir(argv[1]) < 0) {
+                WriteError("Error: could not change directory.");
+            }
             continue;
         }
 
